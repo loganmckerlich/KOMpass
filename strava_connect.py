@@ -2,6 +2,9 @@ import os
 import json
 from stravalib.client import Client
 from stravalib.exc import AccessUnauthorized
+from logging_config import get_logger, log_error, log_function_entry, log_function_exit
+
+logger = get_logger(__name__)
 
 # Strava App Configuration
 STRAVA_CLIENT_ID = os.environ.get("STRAVA_CLIENT_ID", "your_client_id_here")
@@ -11,29 +14,55 @@ STRAVA_CLIENT_SECRET = os.environ.get("STRAVA_CLIENT_SECRET")
 STRAVA_ACCESS_TOKEN = os.environ.get("STRAVA_ACCESS_TOKEN")
 STRAVA_REFRESH_TOKEN = os.environ.get("STRAVA_REFRESH_TOKEN")
 
+# Log configuration status on module load
+if STRAVA_CLIENT_ID and STRAVA_CLIENT_ID != "your_client_id_here":
+    logger.info("Strava client ID found in environment")
+else:
+    logger.warning("Strava client ID not found in environment variables")
+
+if STRAVA_CLIENT_SECRET:
+    logger.info("Strava client secret found in environment")
+else:
+    logger.warning("Strava client secret not found in environment variables")
+
 def get_authorization_url(redirect_uri, state=None):
     """Generate Strava OAuth authorization URL using Swagger client"""
+    log_function_entry(logger, "get_authorization_url", redirect_uri=redirect_uri, state=state)
+    
     client_id_str = os.environ.get("STRAVA_CLIENT_ID", "your_client_id_here")
     
     if not client_id_str or client_id_str == "your_client_id_here":
-        raise ValueError("STRAVA_CLIENT_ID environment variable is required")
+        error_msg = "STRAVA_CLIENT_ID environment variable is required"
+        logger.error(error_msg)
+        raise ValueError(error_msg)
     
     try:
         client_id = int(client_id_str)
-    except (ValueError, TypeError):
-        raise ValueError("STRAVA_CLIENT_ID must be a valid integer")
+    except (ValueError, TypeError) as e:
+        error_msg = "STRAVA_CLIENT_ID must be a valid integer"
+        log_error(logger, e, error_msg)
+        raise ValueError(error_msg)
     
-    client = Client()
-    # Set scopes for read access and activity reading
-    scopes = ["read", "activity:read_all"]
-    
-    return client.authorization_url(
-        client_id=client_id,
-        redirect_uri=redirect_uri,
-        approval_prompt="force",
-        scope=scopes,
-        state=state
-    )
+    try:
+        client = Client()
+        # Set scopes for read access and activity reading
+        scopes = ["read", "activity:read_all"]
+        
+        auth_url = client.authorization_url(
+            client_id=client_id,
+            redirect_uri=redirect_uri,
+            approval_prompt="force",
+            scope=scopes,
+            state=state
+        )
+        
+        logger.info(f"Generated authorization URL for client ID: {client_id}")
+        log_function_exit(logger, "get_authorization_url", "Success")
+        return auth_url
+        
+    except Exception as e:
+        log_error(logger, e, "Failed to generate authorization URL")
+        raise
 
 def exchange_code_for_token(authorization_code, redirect_uri):
     """Exchange authorization code for access token using Swagger client"""
@@ -103,15 +132,18 @@ def refresh_access_token(refresh_token):
 
 def get_athlete(access_token=None):
     """Get athlete information using Swagger client"""
+    log_function_entry(logger, "get_athlete", access_token=bool(access_token))
+    
     # Get legacy token dynamically to support runtime environment changes
     legacy_token = os.environ.get("STRAVA_ACCESS_TOKEN")
     token = access_token or legacy_token
     if not token:
-        raise ValueError("No access token available")
-    
-    client = Client(access_token=token)
+        error_msg = "No access token available"
+        logger.error(error_msg)
+        raise ValueError(error_msg)
     
     try:
+        client = Client(access_token=token)
         athlete = client.get_athlete()
         
         # Convert the athlete object to dict for compatibility
@@ -131,10 +163,18 @@ def get_athlete(access_token=None):
             'friend_count': getattr(athlete, 'friend_count', 0),
         }
         
+        athlete_name = f"{athlete_data.get('firstname', '')} {athlete_data.get('lastname', '')}".strip()
+        logger.info(f"Successfully retrieved athlete data for: {athlete_name or 'Unknown Athlete'}")
+        log_function_exit(logger, "get_athlete", "Success")
+        
         return athlete_data
-    except AccessUnauthorized:
-        raise ValueError("Access token is invalid or expired")
+        
+    except AccessUnauthorized as e:
+        error_msg = "Access token is invalid or expired"
+        log_error(logger, e, error_msg)
+        raise ValueError(error_msg)
     except Exception as e:
+        log_error(logger, e, "Failed to get athlete information")
         raise Exception(f"Failed to get athlete information: {e}")
 
 if __name__ == "__main__":

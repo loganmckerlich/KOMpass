@@ -51,10 +51,16 @@ Thumbs.db
 # Streamlit
 .streamlit/
 
+# Logs directory
+logs/
+
 # Saved routes directory (user data)
 saved_routes/
 
 # Temp files
 *.tmp
 *.log
+
+# Backup files
+main_old.py
 
