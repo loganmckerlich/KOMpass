@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="KOMpass Test" xmlns="http://www.topografix.com/GPX/1/1">
+  <metadata>
+    <name>Test Cycling Route</name>
+    <desc>A sample cycling route for testing streamlit-folium integration</desc>
+    <time>2024-08-25T10:00:00Z</time>
+  </metadata>
+  <trk>
+    <name>Sample Ride</name>
+    <desc>A test route through Golden Gate Park</desc>
+    <trkseg>
+      <trkpt lat="37.7749" lon="-122.4194"><ele>10</ele><time>2024-08-25T10:00:00Z</time></trkpt>
+      <trkpt lat="37.7750" lon="-122.4200"><ele>12</ele><time>2024-08-25T10:01:00Z</time></trkpt>
+      <trkpt lat="37.7755" lon="-122.4210"><ele>15</ele><time>2024-08-25T10:02:00Z</time></trkpt>
+      <trkpt lat="37.7760" lon="-122.4220"><ele>18</ele><time>2024-08-25T10:03:00Z</time></trkpt>
+      <trkpt lat="37.7765" lon="-122.4230"><ele>22</ele><time>2024-08-25T10:04:00Z</time></trkpt>
+      <trkpt lat="37.7770" lon="-122.4240"><ele>25</ele><time>2024-08-25T10:05:00Z</time></trkpt>
+      <trkpt lat="37.7775" lon="-122.4250"><ele>20</ele><time>2024-08-25T10:06:00Z</time></trkpt>
+      <trkpt lat="37.7780" lon="-122.4260"><ele>15</ele><time>2024-08-25T10:07:00Z</time></trkpt>
+      <trkpt lat="37.7785" lon="-122.4270"><ele>12</ele><time>2024-08-25T10:08:00Z</time></trkpt>
+      <trkpt lat="37.7790" lon="-122.4280"><ele>10</ele><time>2024-08-25T10:09:00Z</time></trkpt>
+    </trkseg>
+  </trk>
+</gpx>
