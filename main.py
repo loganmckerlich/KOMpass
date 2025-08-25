@@ -15,7 +15,61 @@ def read_readme(file_path="README.md"):
     except Exception as e:
         return f"Error reading README.md: {e}"
 
+
 st.title("KOMpass - Route Analysis & Planning")
+
+def handle_oauth_callback():
+    """Handle OAuth callback and exchange code for token"""
+    query_params = st.query_params
+    
+    if "code" in query_params:
+        authorization_code = query_params["code"]
+        try:
+            # Exchange code for token
+            redirect_uri = get_redirect_uri()
+            token_data = exchange_code_for_token(authorization_code, redirect_uri)
+            
+            # Store tokens in session state
+            st.session_state["access_token"] = token_data["access_token"]
+            st.session_state["refresh_token"] = token_data["refresh_token"]
+            st.session_state["expires_at"] = token_data["expires_at"]
+            st.session_state["authenticated"] = True
+            
+            # Clear query parameters
+            st.query_params.clear()
+            st.rerun()
+            
+        except Exception as e:
+            st.error(f"Error during authentication: {e}")
+            st.session_state["authenticated"] = False
+    
+    elif "error" in query_params:
+        st.error(f"Authentication error: {query_params['error']}")
+        st.session_state["authenticated"] = False
+
+def get_redirect_uri():
+    """Get the redirect URI for OAuth"""
+    # For development/demo purposes, use localhost
+    # In production, this should be the actual domain where the app is hosted
+    return "https://kompass-dev.streamlit.app/"
+
+def is_authenticated():
+    """Check if user is authenticated"""
+    return st.session_state.get("authenticated", False) and st.session_state.get("access_token")
+
+def logout():
+    """Clear authentication state"""
+    for key in ["access_token", "refresh_token", "expires_at", "authenticated"]:
+        if key in st.session_state:
+            del st.session_state[key]
+
+# Initialize session state
+if "authenticated" not in st.session_state:
+    st.session_state["authenticated"] = False
+
+st.title("KOMpass README Viewer")
+readme_content = read_readme()
+st.markdown(readme_content)
 
 # Create sidebar for navigation
 st.sidebar.title("Navigation")
