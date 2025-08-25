@@ -144,26 +144,27 @@ elif page == "Route Upload":
                     if 'ml_features' in stats:
                         st.metric("Route Compactness", f"{stats['ml_features'].get('route_compactness', 0)}")
             
-            # Performance Predictions
-            if 'speed_analysis' in stats and stats['speed_analysis']:
-                st.subheader("⚡ Performance Predictions")
-                speed = stats['speed_analysis']
+            # Terrain Classification (replacing Performance Predictions)
+            if 'terrain_analysis' in stats and stats['terrain_analysis']:
+                st.subheader("🏔️ Terrain Classification")
+                terrain = stats['terrain_analysis']
                 
                 col1, col2, col3 = st.columns(3)
                 with col1:
-                    st.metric("Terrain Type", speed.get('terrain_type', 'Unknown'))
-                    st.metric("Est. Avg Speed", f"{speed.get('estimated_average_speed_kmh', 0)} km/h")
-                
-                with col2:
-                    st.metric("Est. Time", speed.get('estimated_time_formatted', 'N/A'))
+                    st.metric("Terrain Type", terrain.get('terrain_type', 'Unknown'))
                     if 'power_analysis' in stats:
                         st.metric("Avg Power", f"{stats['power_analysis'].get('average_power_watts', 0)} W")
                 
-                with col3:
+                with col2:
                     if 'power_analysis' in stats:
                         power = stats['power_analysis']
                         st.metric("Est. Energy", f"{power.get('total_energy_kj', 0)} kJ")
                         st.metric("Energy/km", f"{power.get('energy_per_km_kj', 0)} kJ/km")
+                
+                with col3:
+                    terrain_dist = terrain.get('terrain_distribution', {})
+                    st.metric("Flat Sections", f"{terrain_dist.get('flat_percent', 0):.1f}%")
+                    st.metric("Steep Climbs", f"{terrain_dist.get('steep_climbs_percent', 0):.1f}%")
             
             # Power Analysis Details
             if 'power_analysis' in stats and stats['power_analysis'].get('power_zones'):
@@ -276,10 +277,10 @@ elif page == "Route Upload":
                     for route in route_data.get('routes', []):
                         all_points.extend(route.get('points', []))
                     
-                    if all_points and 'speed_analysis' in stats:
-                        # Get comprehensive weather analysis
+                    if all_points:
+                        # Get comprehensive weather analysis (no speed estimates needed)
                         weather_analysis = weather_analyzer.get_comprehensive_weather_analysis(
-                            all_points, stats['speed_analysis'], departure_datetime
+                            all_points, departure_datetime, 2.0  # Default 2-hour duration estimate
                         )
                         
                         if weather_analysis.get('analysis_available'):
@@ -328,28 +329,6 @@ elif page == "Route Upload":
                                         "Heat Stress Periods", 
                                         f"{temp_data.get('high_heat_periods', 0)}"
                                     )
-                            
-                            # Weather-adjusted performance
-                            adjusted_data = weather_analysis.get('weather_adjusted_estimates', {})
-                            if adjusted_data.get('adjustment_available'):
-                                with col4:
-                                    speed_change = adjusted_data.get('speed_change_percent', 0)
-                                    st.metric(
-                                        "Weather-Adjusted Speed", 
-                                        f"{adjusted_data.get('weather_adjusted_speed_kmh', 0)} km/h",
-                                        delta=f"{speed_change:+.1f}%"
-                                    )
-                                    additional_time = adjusted_data.get('additional_time_minutes', 0)
-                                    if additional_time > 0:
-                                        st.metric(
-                                            "Additional Time", 
-                                            f"+{additional_time:.0f} min"
-                                        )
-                                    else:
-                                        st.metric(
-                                            "Time Saved", 
-                                            f"{abs(additional_time):.0f} min"
-                                        )
                             
                             # Weather recommendations
                             recommendations = weather_analysis.get('recommendations', [])

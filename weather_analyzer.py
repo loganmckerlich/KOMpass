@@ -84,46 +84,40 @@ class WeatherAnalyzer:
             }
     
     def calculate_route_timing(self, route_points: List[Dict], 
-                             speed_estimates: Dict) -> List[Dict]:
+                             departure_time: datetime, 
+                             estimated_duration_hours: float = 2.0) -> List[Dict]:
         """
-        Calculate timing along the route based on speed estimates.
+        Calculate timing along the route using estimated duration.
         
         Args:
             route_points: List of route points with lat/lon
-            speed_estimates: Speed analysis from route processor
+            departure_time: Planned departure time
+            estimated_duration_hours: Estimated total ride duration
             
         Returns:
             List of points with estimated arrival times
         """
-        if not route_points or not speed_estimates:
+        if not route_points:
             return []
         
         timed_points = []
-        cumulative_time_hours = 0
-        
-        # Use estimated average speed from route analysis
-        avg_speed_kmh = speed_estimates.get('estimated_average_speed_kmh', 25)
+        total_points = len(route_points)
         
         for i, point in enumerate(route_points):
-            # Calculate distance from previous point
-            if i > 0:
-                prev_point = route_points[i-1]
-                distance_km = self._haversine_distance(
-                    prev_point['lat'], prev_point['lon'],
-                    point['lat'], point['lon']
-                )
-                
-                # Estimate time for this segment
-                segment_time_hours = distance_km / avg_speed_kmh
-                cumulative_time_hours += segment_time_hours
+            # Calculate time progression as fraction of total route
+            time_fraction = i / max(total_points - 1, 1)
+            time_offset_hours = time_fraction * estimated_duration_hours
+            
+            estimated_time = departure_time + timedelta(hours=time_offset_hours)
             
             timed_points.append({
                 'lat': point['lat'],
                 'lon': point['lon'],
                 'elevation': point.get('elevation'),
                 'point_index': i,
-                'estimated_time_offset_hours': cumulative_time_hours,
-                'estimated_time_offset_minutes': cumulative_time_hours * 60
+                'estimated_time': estimated_time,
+                'time_offset_hours': time_offset_hours,
+                'time_offset_minutes': time_offset_hours * 60
             })
         
         return timed_points
@@ -381,15 +375,15 @@ class WeatherAnalyzer:
             }
     
     def get_comprehensive_weather_analysis(self, route_points: List[Dict],
-                                         speed_estimates: Dict, 
-                                         start_time: datetime) -> Dict:
+                                         start_time: datetime,
+                                         estimated_duration_hours: float = 2.0) -> Dict:
         """
         Get comprehensive weather analysis for the entire route.
         
         Args:
             route_points: List of route points
-            speed_estimates: Speed analysis from route processor
             start_time: Planned departure time
+            estimated_duration_hours: Estimated ride duration
             
         Returns:
             Complete weather analysis
@@ -398,13 +392,10 @@ class WeatherAnalyzer:
             return {'analysis_available': False, 'reason': 'No route data'}
         
         # Calculate timing along route
-        timed_points = self.calculate_route_timing(route_points, speed_estimates)
+        timed_points = self.calculate_route_timing(route_points, start_time, estimated_duration_hours)
         
         if not timed_points:
             return {'analysis_available': False, 'reason': 'Unable to calculate route timing'}
-        
-        # Estimate total ride duration
-        total_duration_hours = timed_points[-1]['estimated_time_offset_hours']
         
         # Use route center for weather forecast
         center_lat = sum(p['lat'] for p in route_points) / len(route_points)
@@ -412,7 +403,7 @@ class WeatherAnalyzer:
         
         # Get weather forecast
         weather_data = self.get_weather_forecast(
-            center_lat, center_lon, start_time, total_duration_hours + 1
+            center_lat, center_lon, start_time, estimated_duration_hours + 1
         )
         
         if 'error' in weather_data:
@@ -434,15 +425,12 @@ class WeatherAnalyzer:
         return {
             'analysis_available': True,
             'departure_time': start_time.isoformat(),
-            'estimated_duration_hours': round(total_duration_hours, 2),
+            'estimated_duration_hours': round(estimated_duration_hours, 2),
             'route_center': {'lat': center_lat, 'lon': center_lon},
             'wind_analysis': wind_analysis,
             'precipitation_analysis': rain_analysis,
             'temperature_analysis': temp_analysis,
-            'recommendations': recommendations,
-            'weather_adjusted_estimates': self._calculate_weather_adjustments(
-                speed_estimates, wind_analysis, rain_analysis, temp_analysis
-            )
+            'recommendations': recommendations
         }
     
     # Helper methods
@@ -659,61 +647,3 @@ class WeatherAnalyzer:
         
         return recommendations
     
-    def _calculate_weather_adjustments(self, speed_estimates: Dict, 
-                                     wind_analysis: Dict, rain_analysis: Dict, 
-                                     temp_analysis: Dict) -> Dict:
-        """Calculate weather-adjusted performance estimates."""
-        if not speed_estimates or not speed_estimates.get('estimated_average_speed_kmh'):
-            return {'adjustment_available': False}
-        
-        base_speed = speed_estimates['estimated_average_speed_kmh']
-        adjusted_speed = base_speed
-        adjustments = []
-        
-        # Wind adjustment
-        if wind_analysis.get('analysis_available'):
-            avg_headwind = wind_analysis.get('avg_headwind_component_kmh', 0)
-            if avg_headwind > 0:  # Headwind
-                wind_factor = max(0.7, 1 - (avg_headwind * 0.02))  # 2% reduction per km/h of headwind
-                adjusted_speed *= wind_factor
-                adjustments.append(f"Headwind: -{(1-wind_factor)*100:.1f}%")
-            elif avg_headwind < -5:  # Significant tailwind
-                wind_factor = min(1.3, 1 + (abs(avg_headwind) * 0.01))  # 1% boost per km/h of tailwind
-                adjusted_speed *= wind_factor
-                adjustments.append(f"Tailwind: +{(wind_factor-1)*100:.1f}%")
-        
-        # Rain adjustment
-        if rain_analysis.get('analysis_available'):
-            max_rain_prob = rain_analysis.get('max_precipitation_probability', 0)
-            if max_rain_prob > 50:
-                rain_factor = 0.85  # 15% reduction for likely rain
-                adjusted_speed *= rain_factor
-                adjustments.append("Rain conditions: -15%")
-        
-        # Temperature adjustment
-        if temp_analysis.get('analysis_available'):
-            max_temp = temp_analysis.get('max_temperature_c', 20)
-            if max_temp > 30:
-                heat_factor = max(0.8, 1 - ((max_temp - 30) * 0.02))  # 2% reduction per degree above 30°C
-                adjusted_speed *= heat_factor
-                adjustments.append(f"High heat: -{(1-heat_factor)*100:.1f}%")
-        
-        # Calculate new time estimate
-        if 'estimated_time_hours' in speed_estimates and adjusted_speed != base_speed:
-            original_time = speed_estimates['estimated_time_hours']
-            adjusted_time = original_time * (base_speed / adjusted_speed)
-            time_difference_minutes = (adjusted_time - original_time) * 60
-        else:
-            adjusted_time = speed_estimates.get('estimated_time_hours', 0)
-            time_difference_minutes = 0
-        
-        return {
-            'adjustment_available': True,
-            'original_speed_kmh': round(base_speed, 1),
-            'weather_adjusted_speed_kmh': round(adjusted_speed, 1),
-            'speed_change_percent': round(((adjusted_speed - base_speed) / base_speed) * 100, 1),
-            'original_time_hours': speed_estimates.get('estimated_time_hours', 0),
-            'adjusted_time_hours': round(adjusted_time, 2),
-            'additional_time_minutes': round(time_difference_minutes, 0),
-            'adjustments_applied': adjustments
-        }

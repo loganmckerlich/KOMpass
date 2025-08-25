@@ -238,25 +238,17 @@ class RouteProcessor:
             'complexity_score': round(np.sum(direction_changes) / len(points), 2)
         }
     
-    def _estimate_speed_potential(self, gradient_analysis: Dict, complexity_analysis: Dict, total_distance_km: float) -> Dict:
-        """Estimate speed potential based on terrain characteristics."""
-        if not gradient_analysis or not complexity_analysis:
+    def _classify_terrain_type(self, gradient_analysis: Dict) -> Dict:
+        """Classify terrain type based on gradient characteristics for ML features."""
+        if not gradient_analysis:
             return {}
         
-        # Base speed estimates (km/h) for different terrain types
-        base_speeds = {
-            'flat': 35,
-            'rolling': 28,
-            'hilly': 22,
-            'mountainous': 18
-        }
-        
-        # Adjust based on route characteristics
+        # Get terrain distribution percentages
         flat_pct = gradient_analysis.get('flat_sections_percent', 0)
         moderate_climbs_pct = gradient_analysis.get('moderate_climbs_percent', 0)
         steep_climbs_pct = gradient_analysis.get('steep_climbs_percent', 0)
         
-        # Determine dominant terrain
+        # Determine dominant terrain type for ML classification
         if steep_climbs_pct > 20:
             terrain_type = 'mountainous'
         elif moderate_climbs_pct + steep_climbs_pct > 30:
@@ -266,40 +258,25 @@ class RouteProcessor:
         else:
             terrain_type = 'flat'
         
-        base_speed = base_speeds[terrain_type]
-        
-        # Adjust for route complexity
-        complexity_factor = max(0.7, 1 - (complexity_analysis.get('complexity_score', 0) / 100))
-        estimated_speed = base_speed * complexity_factor
-        
-        # Estimate time
-        estimated_time_hours = total_distance_km / estimated_speed
-        
         return {
             'terrain_type': terrain_type,
-            'estimated_average_speed_kmh': round(estimated_speed, 1),
-            'estimated_time_hours': round(estimated_time_hours, 2),
-            'estimated_time_formatted': f"{int(estimated_time_hours)}h {int((estimated_time_hours % 1) * 60)}m",
-            'speed_factors': {
-                'base_speed_kmh': base_speed,
-                'complexity_factor': round(complexity_factor, 3),
-                'terrain_distribution': {
-                    'flat_percent': flat_pct,
-                    'moderate_climbs_percent': moderate_climbs_pct,
-                    'steep_climbs_percent': steep_climbs_pct
-                }
+            'terrain_distribution': {
+                'flat_percent': flat_pct,
+                'moderate_climbs_percent': moderate_climbs_pct,
+                'steep_climbs_percent': steep_climbs_pct,
+                'descents_percent': gradient_analysis.get('descents_percent', 0)
             }
         }
     
     def _estimate_power_requirements(self, gradient_analysis: Dict, total_distance_km: float) -> Dict:
-        """Estimate power requirements for the route."""
+        """Estimate power requirements for the route (ML training features)."""
         if not gradient_analysis or 'segments' not in gradient_analysis:
             return {}
         
         segments = gradient_analysis['segments']
         power_segments = []
         
-        # Rider assumptions (70kg rider, reasonable fitness)
+        # Rider assumptions (70kg rider, reasonable fitness) for standardized calculations
         rider_weight_kg = 70
         bike_weight_kg = 10
         total_weight_kg = rider_weight_kg + bike_weight_kg
@@ -312,31 +289,39 @@ class RouteProcessor:
         
         total_energy_kj = 0
         
+        # Use standardized speeds for power calculation (not actual speed estimation)
+        speed_by_gradient = {
+            'steep': 15,    # >8% grade
+            'moderate': 20, # 4-8% grade  
+            'light': 25,    # 2-4% grade
+            'flat': 30      # <2% grade or downhill
+        }
+        
         for segment in segments:
             distance_km = segment['distance_m'] / 1000
             gradient_decimal = segment['gradient_percent'] / 100
             
-            # Estimated speed based on gradient (simplified)
-            if gradient_decimal > 0.08:  # >8% grade
-                speed_kmh = 15
-            elif gradient_decimal > 0.04:  # 4-8% grade
-                speed_kmh = 20
-            elif gradient_decimal > 0.02:  # 2-4% grade
-                speed_kmh = 25
-            else:  # <2% grade or downhill
-                speed_kmh = 30
+            # Categorize gradient for standardized power calculation
+            if gradient_decimal > 0.08:
+                speed_kmh = speed_by_gradient['steep']
+            elif gradient_decimal > 0.04:
+                speed_kmh = speed_by_gradient['moderate']
+            elif gradient_decimal > 0.02:
+                speed_kmh = speed_by_gradient['light']
+            else:
+                speed_kmh = speed_by_gradient['flat']
             
             speed_ms = speed_kmh / 3.6
             time_hours = distance_km / speed_kmh
             
-            # Power components (simplified calculation)
+            # Power components (physics-based calculation for ML features)
             # Gravity power
             gravity_power = total_weight_kg * 9.81 * speed_ms * gradient_decimal
             
             # Rolling resistance power
             rolling_power = total_weight_kg * 9.81 * crr * speed_ms
             
-            # Aerodynamic power (assuming no wind)
+            # Aerodynamic power (assuming no wind for standardized calculation)
             aero_power = 0.5 * cda * air_density * (speed_ms ** 3)
             
             # Total power
@@ -351,11 +336,11 @@ class RouteProcessor:
                 'distance_km': distance_km,
                 'gradient_percent': segment['gradient_percent'],
                 'estimated_power_watts': round(total_power, 0),
-                'estimated_speed_kmh': speed_kmh,
+                'reference_speed_kmh': speed_kmh,  # Renamed to clarify this is reference, not prediction
                 'energy_kj': round(energy_kj, 1)
             })
         
-        # Calculate power distribution
+        # Calculate power distribution for ML features
         power_values = [s['estimated_power_watts'] for s in power_segments]
         
         return {
@@ -368,7 +353,8 @@ class RouteProcessor:
                 'endurance_percent': round(np.sum(np.array(power_values) < 200) / len(power_values) * 100, 1) if power_values else 0,
                 'tempo_percent': round(np.sum((np.array(power_values) >= 200) & (np.array(power_values) < 300)) / len(power_values) * 100, 1) if power_values else 0,
                 'threshold_percent': round(np.sum(np.array(power_values) >= 300) / len(power_values) * 100, 1) if power_values else 0
-            }
+            },
+            'note': 'Power calculations use standardized reference speeds for ML feature consistency'
         }
     
     def _query_overpass_api(self, query: str, max_retries: int = 3) -> Dict:
@@ -815,11 +801,11 @@ class RouteProcessor:
             complexity_analysis = self._analyze_route_complexity(all_points)
             stats['complexity_analysis'] = complexity_analysis
             
-            # Speed potential estimation
-            speed_analysis = self._estimate_speed_potential(gradient_analysis, complexity_analysis, total_distance)
-            stats['speed_analysis'] = speed_analysis
+            # Terrain classification for ML features
+            terrain_analysis = self._classify_terrain_type(gradient_analysis)
+            stats['terrain_analysis'] = terrain_analysis
             
-            # Power requirements estimation
+            # Power requirements analysis for ML features
             power_analysis = self._estimate_power_requirements(gradient_analysis, total_distance)
             stats['power_analysis'] = power_analysis
             
