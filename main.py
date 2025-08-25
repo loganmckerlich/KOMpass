@@ -62,7 +62,7 @@ elif page == "Route Upload":
                 stats = processor.calculate_route_statistics(route_data)
             
             # Display route information
-            st.subheader("📊 Route Statistics")
+            st.subheader("📊 Basic Route Statistics")
             
             col1, col2, col3 = st.columns(3)
             with col1:
@@ -80,6 +80,103 @@ elif page == "Route Upload":
                     st.metric("Elevation Loss", f"{stats['total_elevation_loss_m']} m")
                 if stats['min_elevation_m'] is not None:
                     st.metric("Min Elevation", f"{stats['min_elevation_m']:.1f} m")
+            
+            # Advanced Performance Metrics
+            if 'gradient_analysis' in stats and stats['gradient_analysis']:
+                st.subheader("⛰️ Gradient Analysis")
+                gradient = stats['gradient_analysis']
+                
+                col1, col2, col3, col4 = st.columns(4)
+                with col1:
+                    st.metric("Avg Gradient", f"{gradient.get('average_gradient_percent', 0)}%")
+                    st.metric("Max Gradient", f"{gradient.get('max_gradient_percent', 0)}%")
+                
+                with col2:
+                    st.metric("Steep Climbs", f"{gradient.get('steep_climbs_percent', 0)}%")
+                    st.metric("Moderate Climbs", f"{gradient.get('moderate_climbs_percent', 0)}%")
+                
+                with col3:
+                    st.metric("Flat Sections", f"{gradient.get('flat_sections_percent', 0)}%")
+                    st.metric("Descents", f"{gradient.get('descents_percent', 0)}%")
+                
+                with col4:
+                    if 'ml_features' in stats:
+                        st.metric("Difficulty Index", f"{stats['ml_features'].get('difficulty_index', 0):.3f}")
+                        st.metric("Elevation Variation", f"{stats['ml_features'].get('elevation_variation_index', 0)} m/km")
+            
+            # Climbing Analysis
+            if 'climb_analysis' in stats and stats['climb_analysis'].get('climb_count', 0) > 0:
+                st.subheader("🚴‍♂️ Climbing Analysis")
+                climb = stats['climb_analysis']
+                
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric("Number of Climbs", climb.get('climb_count', 0))
+                    st.metric("Total Climb Distance", f"{climb.get('total_climb_distance_km', 0)} km")
+                
+                with col2:
+                    st.metric("Avg Climb Length", f"{climb.get('average_climb_length_m', 0):.0f} m")
+                    st.metric("Avg Climb Gradient", f"{climb.get('average_climb_gradient', 0)}%")
+                
+                with col3:
+                    st.metric("Max Climb Gradient", f"{climb.get('max_climb_gradient', 0)}%")
+                    st.metric("Climb Difficulty Score", f"{climb.get('climb_difficulty_score', 0)}")
+            
+            # Route Complexity
+            if 'complexity_analysis' in stats and stats['complexity_analysis']:
+                st.subheader("🛣️ Route Complexity")
+                complexity = stats['complexity_analysis']
+                
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric("Significant Turns", complexity.get('significant_turns_count', 0))
+                    st.metric("Moderate Turns", complexity.get('moderate_turns_count', 0))
+                
+                with col2:
+                    st.metric("Avg Direction Change", f"{complexity.get('average_direction_change_deg', 0)}°")
+                    st.metric("Route Straightness", f"{complexity.get('route_straightness_index', 0):.3f}")
+                
+                with col3:
+                    st.metric("Complexity Score", f"{complexity.get('complexity_score', 0)}")
+                    if 'ml_features' in stats:
+                        st.metric("Route Compactness", f"{stats['ml_features'].get('route_compactness', 0)}")
+            
+            # Performance Predictions
+            if 'speed_analysis' in stats and stats['speed_analysis']:
+                st.subheader("⚡ Performance Predictions")
+                speed = stats['speed_analysis']
+                
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric("Terrain Type", speed.get('terrain_type', 'Unknown'))
+                    st.metric("Est. Avg Speed", f"{speed.get('estimated_average_speed_kmh', 0)} km/h")
+                
+                with col2:
+                    st.metric("Est. Time", speed.get('estimated_time_formatted', 'N/A'))
+                    if 'power_analysis' in stats:
+                        st.metric("Avg Power", f"{stats['power_analysis'].get('average_power_watts', 0)} W")
+                
+                with col3:
+                    if 'power_analysis' in stats:
+                        power = stats['power_analysis']
+                        st.metric("Est. Energy", f"{power.get('total_energy_kj', 0)} kJ")
+                        st.metric("Energy/km", f"{power.get('energy_per_km_kj', 0)} kJ/km")
+            
+            # Power Analysis Details
+            if 'power_analysis' in stats and stats['power_analysis'].get('power_zones'):
+                st.subheader("⚡ Power Zone Distribution")
+                power = stats['power_analysis']
+                zones = power['power_zones']
+                
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric("Endurance Zone", f"{zones.get('endurance_percent', 0)}%", help="<200W")
+                
+                with col2:
+                    st.metric("Tempo Zone", f"{zones.get('tempo_percent', 0)}%", help="200-300W")
+                
+                with col3:
+                    st.metric("Threshold Zone", f"{zones.get('threshold_percent', 0)}%", help=">300W")
             
             # Display route metadata
             if route_data.get('metadata'):

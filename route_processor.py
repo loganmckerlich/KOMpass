@@ -10,7 +10,8 @@ import os
 from datetime import datetime
 from typing import Dict, List, Tuple, Optional
 import folium
-from math import radians, cos, sin, asin, sqrt
+from math import radians, cos, sin, asin, sqrt, atan2, degrees
+import numpy as np
 
 
 def haversine_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -31,6 +32,32 @@ def haversine_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> fl
     return c * r
 
 
+def calculate_bearing(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """
+    Calculate the bearing between two points in degrees.
+    """
+    lat1, lon1, lat2, lon2 = map(radians, [lat1, lon1, lat2, lon2])
+    
+    dlon = lon2 - lon1
+    y = sin(dlon) * cos(lat2)
+    x = cos(lat1) * sin(lat2) - sin(lat1) * cos(lat2) * cos(dlon)
+    
+    bearing = atan2(y, x)
+    bearing = degrees(bearing)
+    bearing = (bearing + 360) % 360
+    
+    return bearing
+
+
+def calculate_gradient(distance_m: float, elevation_change_m: float) -> float:
+    """
+    Calculate gradient as a percentage.
+    """
+    if distance_m == 0:
+        return 0
+    return (elevation_change_m / distance_m) * 100
+
+
 class RouteProcessor:
     """Handles route file processing and analysis."""
     
@@ -42,6 +69,301 @@ class RouteProcessor:
         """
         self.data_dir = data_dir
         self._ensure_data_dir()
+    
+    def _analyze_gradients(self, points: List[Dict]) -> Dict:
+        """Analyze gradient characteristics of the route."""
+        if len(points) < 2:
+            return {}
+        
+        gradients = []
+        segments = []
+        
+        for i in range(1, len(points)):
+            prev_point = points[i-1]
+            curr_point = points[i]
+            
+            if prev_point['elevation'] is not None and curr_point['elevation'] is not None:
+                distance_m = haversine_distance(
+                    prev_point['lat'], prev_point['lon'],
+                    curr_point['lat'], curr_point['lon']
+                ) * 1000  # Convert to meters
+                
+                elevation_change = curr_point['elevation'] - prev_point['elevation']
+                gradient = calculate_gradient(distance_m, elevation_change)
+                
+                gradients.append(gradient)
+                segments.append({
+                    'distance_m': distance_m,
+                    'elevation_change_m': elevation_change,
+                    'gradient_percent': gradient
+                })
+        
+        if not gradients:
+            return {}
+        
+        gradients = np.array(gradients)
+        
+        return {
+            'average_gradient_percent': round(np.mean(gradients), 2),
+            'max_gradient_percent': round(np.max(gradients), 2),
+            'min_gradient_percent': round(np.min(gradients), 2),
+            'gradient_std_dev': round(np.std(gradients), 2),
+            'steep_climbs_percent': round(np.sum(gradients > 8) / len(gradients) * 100, 1),
+            'moderate_climbs_percent': round(np.sum((gradients > 3) & (gradients <= 8)) / len(gradients) * 100, 1),
+            'flat_sections_percent': round(np.sum(np.abs(gradients) <= 3) / len(gradients) * 100, 1),
+            'descents_percent': round(np.sum(gradients < -3) / len(gradients) * 100, 1),
+            'segments': segments
+        }
+    
+    def _analyze_climbs(self, points: List[Dict]) -> Dict:
+        """Analyze climbing segments and characteristics."""
+        if len(points) < 2:
+            return {}
+        
+        climbs = []
+        current_climb = None
+        
+        for i in range(1, len(points)):
+            prev_point = points[i-1]
+            curr_point = points[i]
+            
+            if prev_point['elevation'] is not None and curr_point['elevation'] is not None:
+                distance_m = haversine_distance(
+                    prev_point['lat'], prev_point['lon'],
+                    curr_point['lat'], curr_point['lon']
+                ) * 1000
+                
+                elevation_change = curr_point['elevation'] - prev_point['elevation']
+                gradient = calculate_gradient(distance_m, elevation_change)
+                
+                # Start of climb (gradient > 3%)
+                if gradient > 3 and current_climb is None:
+                    current_climb = {
+                        'start_elevation': prev_point['elevation'],
+                        'distance_m': distance_m,
+                        'elevation_gain_m': max(0, elevation_change),
+                        'max_gradient': gradient,
+                        'segments': 1
+                    }
+                
+                # Continue climb
+                elif gradient > 1 and current_climb is not None:
+                    current_climb['distance_m'] += distance_m
+                    current_climb['elevation_gain_m'] += max(0, elevation_change)
+                    current_climb['max_gradient'] = max(current_climb['max_gradient'], gradient)
+                    current_climb['segments'] += 1
+                
+                # End of climb
+                elif current_climb is not None and (gradient <= 1 or i == len(points) - 1):
+                    if current_climb['elevation_gain_m'] > 10:  # Only count significant climbs
+                        current_climb['end_elevation'] = curr_point['elevation']
+                        current_climb['average_gradient'] = (current_climb['elevation_gain_m'] / current_climb['distance_m']) * 100
+                        current_climb['difficulty_score'] = self._calculate_climb_difficulty(current_climb)
+                        climbs.append(current_climb)
+                    current_climb = None
+        
+        if not climbs:
+            return {'climb_count': 0}
+        
+        total_climb_distance = sum(c['distance_m'] for c in climbs)
+        total_climb_elevation = sum(c['elevation_gain_m'] for c in climbs)
+        
+        return {
+            'climb_count': len(climbs),
+            'total_climb_distance_km': round(total_climb_distance / 1000, 2),
+            'total_climb_elevation_m': round(total_climb_elevation, 1),
+            'average_climb_length_m': round(total_climb_distance / len(climbs), 0) if climbs else 0,
+            'average_climb_gradient': round(sum(c['average_gradient'] for c in climbs) / len(climbs), 2) if climbs else 0,
+            'max_climb_gradient': round(max(c['max_gradient'] for c in climbs), 2) if climbs else 0,
+            'climb_difficulty_score': round(sum(c['difficulty_score'] for c in climbs), 1),
+            'climbs': climbs
+        }
+    
+    def _calculate_climb_difficulty(self, climb: Dict) -> float:
+        """Calculate climbing difficulty score based on distance and gradient."""
+        distance_km = climb['distance_m'] / 1000
+        avg_gradient = climb['average_gradient']
+        
+        # Difficulty = distance * gradient^2 (emphasizes steep sections)
+        return distance_km * (avg_gradient ** 2) / 100
+    
+    def _analyze_route_complexity(self, points: List[Dict]) -> Dict:
+        """Analyze route complexity based on direction changes and curvature."""
+        if len(points) < 3:
+            return {}
+        
+        bearings = []
+        direction_changes = []
+        
+        for i in range(1, len(points)):
+            prev_point = points[i-1]
+            curr_point = points[i]
+            
+            bearing = calculate_bearing(
+                prev_point['lat'], prev_point['lon'],
+                curr_point['lat'], curr_point['lon']
+            )
+            bearings.append(bearing)
+        
+        # Calculate direction changes
+        for i in range(1, len(bearings)):
+            change = abs(bearings[i] - bearings[i-1])
+            # Handle wraparound (e.g., 350° to 10°)
+            if change > 180:
+                change = 360 - change
+            direction_changes.append(change)
+        
+        if not direction_changes:
+            return {}
+        
+        direction_changes = np.array(direction_changes)
+        
+        # Count significant turns
+        significant_turns = np.sum(direction_changes > 45)
+        moderate_turns = np.sum((direction_changes > 15) & (direction_changes <= 45))
+        
+        return {
+            'average_direction_change_deg': round(np.mean(direction_changes), 2),
+            'max_direction_change_deg': round(np.max(direction_changes), 2),
+            'total_direction_change_deg': round(np.sum(direction_changes), 1),
+            'significant_turns_count': int(significant_turns),
+            'moderate_turns_count': int(moderate_turns),
+            'route_straightness_index': round(1 / (1 + np.mean(direction_changes) / 180), 3),
+            'complexity_score': round(np.sum(direction_changes) / len(points), 2)
+        }
+    
+    def _estimate_speed_potential(self, gradient_analysis: Dict, complexity_analysis: Dict, total_distance_km: float) -> Dict:
+        """Estimate speed potential based on terrain characteristics."""
+        if not gradient_analysis or not complexity_analysis:
+            return {}
+        
+        # Base speed estimates (km/h) for different terrain types
+        base_speeds = {
+            'flat': 35,
+            'rolling': 28,
+            'hilly': 22,
+            'mountainous': 18
+        }
+        
+        # Adjust based on route characteristics
+        flat_pct = gradient_analysis.get('flat_sections_percent', 0)
+        moderate_climbs_pct = gradient_analysis.get('moderate_climbs_percent', 0)
+        steep_climbs_pct = gradient_analysis.get('steep_climbs_percent', 0)
+        
+        # Determine dominant terrain
+        if steep_climbs_pct > 20:
+            terrain_type = 'mountainous'
+        elif moderate_climbs_pct + steep_climbs_pct > 30:
+            terrain_type = 'hilly'
+        elif moderate_climbs_pct + steep_climbs_pct > 10:
+            terrain_type = 'rolling'
+        else:
+            terrain_type = 'flat'
+        
+        base_speed = base_speeds[terrain_type]
+        
+        # Adjust for route complexity
+        complexity_factor = max(0.7, 1 - (complexity_analysis.get('complexity_score', 0) / 100))
+        estimated_speed = base_speed * complexity_factor
+        
+        # Estimate time
+        estimated_time_hours = total_distance_km / estimated_speed
+        
+        return {
+            'terrain_type': terrain_type,
+            'estimated_average_speed_kmh': round(estimated_speed, 1),
+            'estimated_time_hours': round(estimated_time_hours, 2),
+            'estimated_time_formatted': f"{int(estimated_time_hours)}h {int((estimated_time_hours % 1) * 60)}m",
+            'speed_factors': {
+                'base_speed_kmh': base_speed,
+                'complexity_factor': round(complexity_factor, 3),
+                'terrain_distribution': {
+                    'flat_percent': flat_pct,
+                    'moderate_climbs_percent': moderate_climbs_pct,
+                    'steep_climbs_percent': steep_climbs_pct
+                }
+            }
+        }
+    
+    def _estimate_power_requirements(self, gradient_analysis: Dict, total_distance_km: float) -> Dict:
+        """Estimate power requirements for the route."""
+        if not gradient_analysis or 'segments' not in gradient_analysis:
+            return {}
+        
+        segments = gradient_analysis['segments']
+        power_segments = []
+        
+        # Rider assumptions (70kg rider, reasonable fitness)
+        rider_weight_kg = 70
+        bike_weight_kg = 10
+        total_weight_kg = rider_weight_kg + bike_weight_kg
+        
+        # Coefficients for power calculation
+        cda = 0.32  # Aerodynamic drag coefficient * area (m²)
+        crr = 0.005  # Rolling resistance coefficient
+        air_density = 1.225  # kg/m³
+        efficiency = 0.95  # Drivetrain efficiency
+        
+        total_energy_kj = 0
+        
+        for segment in segments:
+            distance_km = segment['distance_m'] / 1000
+            gradient_decimal = segment['gradient_percent'] / 100
+            
+            # Estimated speed based on gradient (simplified)
+            if gradient_decimal > 0.08:  # >8% grade
+                speed_kmh = 15
+            elif gradient_decimal > 0.04:  # 4-8% grade
+                speed_kmh = 20
+            elif gradient_decimal > 0.02:  # 2-4% grade
+                speed_kmh = 25
+            else:  # <2% grade or downhill
+                speed_kmh = 30
+            
+            speed_ms = speed_kmh / 3.6
+            time_hours = distance_km / speed_kmh
+            
+            # Power components (simplified calculation)
+            # Gravity power
+            gravity_power = total_weight_kg * 9.81 * speed_ms * gradient_decimal
+            
+            # Rolling resistance power
+            rolling_power = total_weight_kg * 9.81 * crr * speed_ms
+            
+            # Aerodynamic power (assuming no wind)
+            aero_power = 0.5 * cda * air_density * (speed_ms ** 3)
+            
+            # Total power
+            total_power = (gravity_power + rolling_power + aero_power) / efficiency
+            total_power = max(100, total_power)  # Minimum sustainable power
+            
+            # Energy for this segment
+            energy_kj = (total_power * time_hours * 3600) / 1000  # Convert to kJ
+            total_energy_kj += energy_kj
+            
+            power_segments.append({
+                'distance_km': distance_km,
+                'gradient_percent': segment['gradient_percent'],
+                'estimated_power_watts': round(total_power, 0),
+                'estimated_speed_kmh': speed_kmh,
+                'energy_kj': round(energy_kj, 1)
+            })
+        
+        # Calculate power distribution
+        power_values = [s['estimated_power_watts'] for s in power_segments]
+        
+        return {
+            'average_power_watts': round(np.mean(power_values), 0) if power_values else 0,
+            'max_power_watts': round(np.max(power_values), 0) if power_values else 0,
+            'normalized_power_watts': round(np.power(np.mean(np.power(power_values, 4)), 0.25), 0) if power_values else 0,
+            'total_energy_kj': round(total_energy_kj, 0),
+            'energy_per_km_kj': round(total_energy_kj / total_distance_km, 1) if total_distance_km > 0 else 0,
+            'power_zones': {
+                'endurance_percent': round(np.sum(np.array(power_values) < 200) / len(power_values) * 100, 1) if power_values else 0,
+                'tempo_percent': round(np.sum((np.array(power_values) >= 200) & (np.array(power_values) < 300)) / len(power_values) * 100, 1) if power_values else 0,
+                'threshold_percent': round(np.sum(np.array(power_values) >= 300) / len(power_values) * 100, 1) if power_values else 0
+            }
+        }
     
     def _ensure_data_dir(self):
         """Create data directory if it doesn't exist."""
@@ -131,13 +453,13 @@ class RouteProcessor:
             raise ValueError(f"Error parsing GPX file: {str(e)}")
     
     def calculate_route_statistics(self, route_data: Dict) -> Dict:
-        """Calculate basic statistics for the route.
+        """Calculate comprehensive statistics for the route including ML-ready features.
         
         Args:
             route_data: Parsed route data dictionary
             
         Returns:
-            Dictionary containing route statistics
+            Dictionary containing route statistics and advanced metrics
         """
         stats = {
             'total_distance_km': 0,
@@ -174,7 +496,7 @@ class RouteProcessor:
             'west': min(lons)
         }
         
-        # Calculate distance and elevation statistics
+        # Calculate basic distance and elevation statistics
         total_distance = 0
         elevations = [p['elevation'] for p in all_points if p['elevation'] is not None]
         
@@ -203,6 +525,43 @@ class RouteProcessor:
         stats['total_distance_km'] = round(total_distance, 2)
         stats['total_elevation_gain_m'] = round(stats['total_elevation_gain_m'], 1)
         stats['total_elevation_loss_m'] = round(stats['total_elevation_loss_m'], 1)
+        
+        # Advanced ML-ready metrics
+        if len(all_points) >= 2:
+            # Gradient analysis
+            gradient_analysis = self._analyze_gradients(all_points)
+            stats['gradient_analysis'] = gradient_analysis
+            
+            # Climbing analysis
+            climb_analysis = self._analyze_climbs(all_points)
+            stats['climb_analysis'] = climb_analysis
+            
+            # Route complexity analysis
+            complexity_analysis = self._analyze_route_complexity(all_points)
+            stats['complexity_analysis'] = complexity_analysis
+            
+            # Speed potential estimation
+            speed_analysis = self._estimate_speed_potential(gradient_analysis, complexity_analysis, total_distance)
+            stats['speed_analysis'] = speed_analysis
+            
+            # Power requirements estimation
+            power_analysis = self._estimate_power_requirements(gradient_analysis, total_distance)
+            stats['power_analysis'] = power_analysis
+            
+            # Additional derived metrics for ML
+            stats['ml_features'] = {
+                'route_density_points_per_km': round(len(all_points) / max(total_distance, 0.1), 1),
+                'elevation_range_m': (stats['max_elevation_m'] - stats['min_elevation_m']) if elevations else 0,
+                'elevation_variation_index': round(stats['total_elevation_gain_m'] / max(total_distance, 0.1), 1),
+                'route_compactness': round(total_distance / max(
+                    haversine_distance(stats['bounds']['north'], stats['bounds']['west'],
+                                     stats['bounds']['south'], stats['bounds']['east']), 0.1), 2),
+                'difficulty_index': round((
+                    gradient_analysis.get('steep_climbs_percent', 0) * 3 +
+                    gradient_analysis.get('moderate_climbs_percent', 0) * 1.5 +
+                    complexity_analysis.get('complexity_score', 0) * 0.5
+                ) / 100, 3)
+            }
         
         return stats
     

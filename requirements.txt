@@ -3,3 +3,4 @@ folium>=0.20.0
 pandas>=2.3.0
 gpxpy>=1.6.2
 requests>=2.31.0
+numpy>=1.24.0
