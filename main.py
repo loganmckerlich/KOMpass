@@ -42,7 +42,7 @@ def get_redirect_uri():
     """Get the redirect URI for OAuth"""
     # For development/demo purposes, use localhost
     # In production, this should be the actual domain where the app is hosted
-    return "http://localhost:8501"
+    return "https://kompass-dev.streamlit.app/"
 
 def is_authenticated():
     """Check if user is authenticated"""
