@@ -16,13 +16,13 @@ class StravaConfig:
     """Strava API configuration."""
     client_id: str
     client_secret: str
-    redirect_uri_dev: str = "http://localhost:8501"
-    redirect_uri_prod: str = "https://kompass-dev.streamlit.app"
+    redirect_uri_local: str = "http://localhost:8501"
+    redirect_uri_prod: str = "https://kompass-dev.streamlit.app/"
     
     def get_redirect_uri(self) -> str:
         """Get appropriate redirect URI based on environment."""
         if os.environ.get("STREAMLIT_ENV") == "development":
-            return self.redirect_uri_dev
+            return self.redirect_uri_local
         return self.redirect_uri_prod
 
 
