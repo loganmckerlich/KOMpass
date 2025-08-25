@@ -79,7 +79,12 @@ def get_athlete(access_token=None):
     return response.json()
 
 if __name__ == "__main__":
-    athlete = get_athlete()
-    print("Authenticated athlete profile:")
-    # Safely print unicode characters
-    print(json.dumps(athlete, indent=2, ensure_ascii=False))
+    try:
+        athlete = get_athlete()
+        print("Authenticated athlete profile:")
+        # Safely print unicode characters
+        print(json.dumps(athlete, indent=2, ensure_ascii=False))
+    except ValueError as e:
+        print(f"Error: {e}")
+        print("To use this script directly, set the STRAVA_ACCESS_TOKEN environment variable.")
+        print("For OAuth flow, use the main.py Streamlit app instead.")
