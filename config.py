@@ -102,8 +102,8 @@ class ConfigManager:
         config = StravaConfig(
             client_id=client_id,
             client_secret=client_secret,
-            redirect_uri_dev=os.environ.get("STRAVA_REDIRECT_URI_DEV", "http://localhost:8501"),
-            redirect_uri_prod=os.environ.get("STRAVA_REDIRECT_URI_PROD", "https://kompass-dev.streamlit.app")
+            redirect_uri_local=os.environ.get("STRAVA_REDIRECT_URI_LOCAL", "http://localhost:8501"),
+            redirect_uri_prod=os.environ.get("STRAVA_REDIRECT_URI_PROD", "https://kompass-dev.streamlit.app/")
         )
         
         logger.debug(f"Strava config loaded - Client ID: {client_id[:8]}...")
