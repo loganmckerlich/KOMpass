@@ -23,7 +23,7 @@ share/python-wheels/
 *.egg
 MANIFEST
 
-# Virtual environments
+# Environment variables
 .env
 .venv
 env/
@@ -57,3 +57,4 @@ saved_routes/
 # Temp files
 *.tmp
 *.log
+
