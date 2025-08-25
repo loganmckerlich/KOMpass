@@ -115,7 +115,7 @@ if page == "Home":
         if 'follower_count' in athlete:
             st.write(f"**Followers:** {athlete.get('follower_count', 0)}")
         if 'friend_count' in athlete:
-            st.write(f"**Following:** {athlete.get('friend_count', 
+            st.write(f"**Following:** {athlete.get('friend_count', 0)}")
     except Exception as e:
         st.error(f"Error fetching athlete info: {e}")
 
