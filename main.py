@@ -414,8 +414,8 @@ elif page == "Route Upload":
             with st.spinner("Generating map..."):
                 route_map = processor.create_route_map(route_data, stats)
                 
-                # Display the map using streamlit-folium
-                st_folium(route_map, height=500, width=700)
+                # Display the map using streamlit-folium with responsive design
+                st_folium(route_map, height=500, use_container_width=True, key="main_route_map")
             
             # Save route option
             st.subheader("💾 Save Route")
@@ -471,8 +471,8 @@ elif page == "Saved Routes":
                         with st.spinner("Loading map..."):
                             route_map = processor.create_route_map(route_data, stats)
                             
-                            # Display the map using streamlit-folium
-                            st_folium(route_map, height=400, width=700)
+                            # Display the map using streamlit-folium with responsive design
+                            st_folium(route_map, height=400, use_container_width=True, key=f"saved_route_map_{i}")
                                 
                     except Exception as e:
                         st.error(f"Error loading route: {str(e)}")
