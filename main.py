@@ -1,603 +1,88 @@
+"""
+KOMpass - Main Application Entry Point
+
+A streamlined cycling route analysis application that provides:
+- Route upload and comprehensive analysis
+- Weather forecasting and conditions analysis  
+- Strava integration for athlete data
+- Performance metrics and terrain classification
+- Traffic stop analysis and route complexity metrics
+
+This main module is kept minimal and clean, with heavy lifting delegated to helper modules.
+"""
+
 import streamlit as st
-from strava_connect import get_athlete
-from route_processor import RouteProcessor
-from weather_analyzer import WeatherAnalyzer
-from streamlit_folium import st_folium
-import os
-from datetime import datetime, timedelta
-from strava_connect import get_athlete, get_authorization_url, exchange_code_for_token
-from strava_oauth import StravaOAuth
-import urllib.parse
-import os
+from logging_config import setup_logging, get_logger
+from config import get_config
+from auth_manager import get_auth_manager
+from ui_components import get_ui_components
 
-def read_readme(file_path="README.md"):
+# Configure page settings
+st.set_page_config(
+    page_title="KOMpass - Route Analysis & Planning",
+    page_icon="🚴",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
+# Initialize logging
+config = get_config()
+logger = setup_logging(
+    log_level=config.app.log_level,
+    log_to_file=config.app.log_to_file
+)
+
+# Log application startup
+logger.info("KOMpass application starting")
+logger.debug(f"Configuration loaded: Strava configured={config.is_strava_configured()}")
+
+
+def main():
+    """Main application entry point."""
+    logger.info("Entering main application")
+    
     try:
-        with open(file_path, "r", encoding="utf-8") as f:
-            return f.read()
-    except Exception as e:
-        return f"Error reading README.md: {e}"
-
-
-st.title("KOMpass - Route Analysis & Planning")
-
-def handle_oauth_callback():
-    """Handle OAuth callback and exchange code for token"""
-    query_params = st.query_params
-    
-    if "code" in query_params:
-        authorization_code = query_params["code"]
-        try:
-            # Initialize OAuth client
-            oauth_client = StravaOAuth()
-            
-            # Exchange code for token
-            redirect_uri = get_redirect_uri()
-            token_data = oauth_client.exchange_code_for_token(authorization_code, redirect_uri)
-            
-            # Store tokens in session state
-            st.session_state["access_token"] = token_data["access_token"]
-            st.session_state["refresh_token"] = token_data["refresh_token"]
-            st.session_state["expires_at"] = token_data["expires_at"]
-            st.session_state["authenticated"] = True
-            
-            # Clear query parameters
-            st.query_params.clear()
-            st.rerun()
-            
-        except Exception as e:
-            st.error(f"Error during authentication: {e}")
-            st.session_state["authenticated"] = False
-    
-    elif "error" in query_params:
-        st.error(f"Authentication error: {query_params['error']}")
-        st.session_state["authenticated"] = False
-
-def get_redirect_uri():
-    """Get the redirect URI for OAuth"""
-    # Check if we're running locally for development
-    if os.environ.get("STREAMLIT_ENV") == "development":
-        return "http://localhost:8501"
-    
-    # For production, use the actual deployed URL
-    # This should match exactly what's configured in Strava API settings
-    return "https://kompass-dev.streamlit.app"
-
-def is_authenticated():
-    """Check if user is authenticated"""
-    return st.session_state.get("authenticated", False) and st.session_state.get("access_token")
-
-def logout():
-    """Clear authentication state"""
-    for key in ["access_token", "refresh_token", "expires_at", "authenticated"]:
-        if key in st.session_state:
-            del st.session_state[key]
-
-# Initialize session state
-if "authenticated" not in st.session_state:
-    st.session_state["authenticated"] = False
-
-st.title("KOMpass README Viewer")
-readme_content = read_readme()
-st.markdown(readme_content)
-
-# Create sidebar for navigation
-st.sidebar.title("Navigation")
-page = st.sidebar.selectbox("Choose a page", ["Home", "Route Upload", "Saved Routes"])
-
-if page == "Home":
-    st.header("Welcome to KOMpass")
-    readme_content = read_readme()
-    st.markdown(readme_content)
-
-    # Strava Athlete Info Section
-    st.header("Strava Athlete Information")
-    try:
-        # Initialize OAuth client and get athlete info
-        oauth_client = StravaOAuth()
-        access_token = st.session_state["access_token"]
-        athlete = oauth_client.get_athlete(access_token)
+        # Initialize components
+        auth_manager = get_auth_manager()
+        ui_components = get_ui_components()
         
-        col1, col2 = st.columns(2)
-        with col1:
-            st.write(f"**Name:** {athlete.get('firstname', '')} {athlete.get('lastname', '')}")
-            st.write(f"**Username:** {athlete.get('username', 'N/A')}")
-            st.write(f"**Country:** {athlete.get('country', 'N/A')}")
-        with col2:
-            st.write(f"**Sex:** {athlete.get('sex', 'N/A')}")
-            if athlete.get('profile'):
-                st.write(f"**Profile:** [View on Strava]({athlete.get('profile')})")
-            
-            # Display profile picture if available
-            if athlete.get('profile_medium'):
-                st.image(athlete.get('profile_medium'), width=100)
+        # Initialize session state for authentication
+        auth_manager.initialize_session_state()
         
-        # Display some activity stats
-        if 'follower_count' in athlete:
-            st.write(f"**Followers:** {athlete.get('follower_count', 0)}")
-        if 'friend_count' in athlete:
-            st.write(f"**Following:** {athlete.get('friend_count', 
-    except Exception as e:
-        st.error(f"Error fetching athlete info: {e}")
-
-elif page == "Route Upload":
-    st.header("📁 Upload Route File")
-    st.markdown("Upload GPX files from ride tracking apps like RideWithGPS, Strava, Garmin Connect, etc.")
-    
-
-    # Initialize route processor and weather analyzer
-    processor = RouteProcessor()
-    weather_analyzer = WeatherAnalyzer()
-    
-    # File upload
-    uploaded_file = st.file_uploader(
-        "Choose a GPX file",
-        type=['gpx'],
-        help="Upload a GPX file containing your route data"
-    )
-    
-    if uploaded_file is not None:
-        try:
-            # Read file content
-            gpx_content = uploaded_file.read().decode('utf-8')
-            
-            st.success(f"✅ File '{uploaded_file.name}' uploaded successfully!")
-            
-            # Process the route
-            with st.spinner("Processing route data..."):
-                route_data = processor.parse_gpx_file(gpx_content)
-                stats = processor.calculate_route_statistics(route_data)
-            
-            # Display route information
-            st.subheader("📊 Basic Route Statistics")
-            
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                st.metric("Distance", f"{stats['total_distance_km']} km")
-                st.metric("Total Points", stats['total_points'])
-            
-            with col2:
-                if stats['total_elevation_gain_m'] > 0:
-                    st.metric("Elevation Gain", f"{stats['total_elevation_gain_m']} m")
-                if stats['max_elevation_m'] is not None:
-                    st.metric("Max Elevation", f"{stats['max_elevation_m']:.1f} m")
-            
-            with col3:
-                if stats['total_elevation_loss_m'] > 0:
-                    st.metric("Elevation Loss", f"{stats['total_elevation_loss_m']} m")
-                if stats['min_elevation_m'] is not None:
-                    st.metric("Min Elevation", f"{stats['min_elevation_m']:.1f} m")
-            
-            # Advanced Performance Metrics
-            if 'gradient_analysis' in stats and stats['gradient_analysis']:
-                st.subheader("⛰️ Gradient Analysis")
-                gradient = stats['gradient_analysis']
-                
-                col1, col2, col3, col4 = st.columns(4)
-                with col1:
-                    st.metric("Avg Gradient", f"{gradient.get('average_gradient_percent', 0)}%")
-                    st.metric("Max Gradient", f"{gradient.get('max_gradient_percent', 0)}%")
-                
-                with col2:
-                    st.metric("Steep Climbs", f"{gradient.get('steep_climbs_percent', 0)}%")
-                    st.metric("Moderate Climbs", f"{gradient.get('moderate_climbs_percent', 0)}%")
-                
-                with col3:
-                    st.metric("Flat Sections", f"{gradient.get('flat_sections_percent', 0)}%")
-                    st.metric("Descents", f"{gradient.get('descents_percent', 0)}%")
-                
-                with col4:
-                    if 'ml_features' in stats:
-                        st.metric("Difficulty Index", f"{stats['ml_features'].get('difficulty_index', 0):.3f}")
-                        st.metric("Elevation Variation", f"{stats['ml_features'].get('elevation_variation_index', 0)} m/km")
-            
-            # Climbing Analysis
-            if 'climb_analysis' in stats and stats['climb_analysis'].get('climb_count', 0) > 0:
-                st.subheader("🚴‍♂️ Climbing Analysis")
-                climb = stats['climb_analysis']
-                
-                col1, col2, col3 = st.columns(3)
-                with col1:
-                    st.metric("Number of Climbs", climb.get('climb_count', 0))
-                    st.metric("Total Climb Distance", f"{climb.get('total_climb_distance_km', 0)} km")
-                
-                with col2:
-                    st.metric("Avg Climb Length", f"{climb.get('average_climb_length_m', 0):.0f} m")
-                    st.metric("Avg Climb Gradient", f"{climb.get('average_climb_gradient', 0)}%")
-                
-                with col3:
-                    st.metric("Max Climb Gradient", f"{climb.get('max_climb_gradient', 0)}%")
-                    st.metric("Climb Difficulty Score", f"{climb.get('climb_difficulty_score', 0)}")
-            
-            # Route Complexity
-            if 'complexity_analysis' in stats and stats['complexity_analysis']:
-                st.subheader("🛣️ Route Complexity")
-                complexity = stats['complexity_analysis']
-                
-                col1, col2, col3 = st.columns(3)
-                with col1:
-                    st.metric("Significant Turns", complexity.get('significant_turns_count', 0))
-                    st.metric("Moderate Turns", complexity.get('moderate_turns_count', 0))
-                
-                with col2:
-                    st.metric("Avg Direction Change", f"{complexity.get('average_direction_change_deg', 0)}°")
-                    st.metric("Route Straightness", f"{complexity.get('route_straightness_index', 0):.3f}")
-                
-                with col3:
-                    st.metric("Complexity Score", f"{complexity.get('complexity_score', 0)}")
-                    if 'ml_features' in stats:
-                        st.metric("Route Compactness", f"{stats['ml_features'].get('route_compactness', 0)}")
-            
-            # Terrain Classification (replacing Performance Predictions)
-            if 'terrain_analysis' in stats and stats['terrain_analysis']:
-                st.subheader("🏔️ Terrain Classification")
-                terrain = stats['terrain_analysis']
-                
-                col1, col2, col3 = st.columns(3)
-                with col1:
-                    st.metric("Terrain Type", terrain.get('terrain_type', 'Unknown'))
-                    if 'power_analysis' in stats:
-                        st.metric("Avg Power", f"{stats['power_analysis'].get('average_power_watts', 0)} W")
-                
-                with col2:
-                    if 'power_analysis' in stats:
-                        power = stats['power_analysis']
-                        st.metric("Est. Energy", f"{power.get('total_energy_kj', 0)} kJ")
-                        st.metric("Energy/km", f"{power.get('energy_per_km_kj', 0)} kJ/km")
-                
-                with col3:
-                    terrain_dist = terrain.get('terrain_distribution', {})
-                    st.metric("Flat Sections", f"{terrain_dist.get('flat_percent', 0):.1f}%")
-                    st.metric("Steep Climbs", f"{terrain_dist.get('steep_climbs_percent', 0):.1f}%")
-            
-            # Power Analysis Details
-            if 'power_analysis' in stats and stats['power_analysis'].get('power_zones'):
-                st.subheader("⚡ Power Zone Distribution")
-                power = stats['power_analysis']
-                zones = power['power_zones']
-                
-                col1, col2, col3 = st.columns(3)
-                with col1:
-                    st.metric("Endurance Zone", f"{zones.get('endurance_percent', 0)}%", help="<200W")
-                
-                with col2:
-                    st.metric("Tempo Zone", f"{zones.get('tempo_percent', 0)}%", help="200-300W")
-                
-                with col3:
-                    st.metric("Threshold Zone", f"{zones.get('threshold_percent', 0)}%", help=">300W")
-            
-            # Traffic Stop Analysis
-            if 'traffic_analysis' in stats and stats['traffic_analysis'].get('analysis_available'):
-                st.subheader("🚦 Traffic Stop Analysis")
-                traffic = stats['traffic_analysis']
-                
-                col1, col2, col3 = st.columns(3)
-                with col1:
-                    st.metric("Traffic Lights", traffic.get('traffic_lights_detected', 0))
-                    st.metric("Major Road Crossings", traffic.get('major_road_crossings', 0))
-                
-                with col2:
-                    st.metric("Total Potential Stops", traffic.get('total_potential_stops', 0))
-                    st.metric("Stop Density", f"{traffic.get('stop_density_per_km', 0)} stops/km")
-                
-                with col3:
-                    st.metric("Avg Distance Between Stops", f"{traffic.get('average_distance_between_stops_km', 0)} km")
-                    st.metric("Est. Time Penalty", f"{traffic.get('estimated_time_penalty_minutes', 0)} min")
-                
-                # Additional traffic info
-                if traffic.get('infrastructure_summary'):
-                    summary = traffic['infrastructure_summary']
-                    st.info(f"🚦 Found {summary.get('total_traffic_lights_in_area', 0)} traffic lights and "
-                           f"{summary.get('total_major_roads_in_area', 0)} major roads in route area. "
-                           f"Identified {summary.get('route_intersections_found', 0)} potential stops on your route.")
-            
-            elif 'traffic_analysis' in stats and not stats['traffic_analysis'].get('analysis_available'):
-                st.subheader("🚦 Traffic Stop Analysis")
-                reason = stats['traffic_analysis'].get('reason', 'Unknown error')
-                st.warning(f"⚠️ Traffic analysis unavailable: {reason}")
-                if 'Unable to calculate' in reason:
-                    st.info("💡 Traffic stop analysis requires an internet connection to query OpenStreetMap data.")
-            
-            # ML Features Summary
-            if 'ml_features' in stats:
-                st.subheader("🤖 ML Training Features")
-                ml = stats['ml_features']
-                
-                col1, col2, col3, col4 = st.columns(4)
-                with col1:
-                    st.metric("Route Density", f"{ml.get('route_density_points_per_km', 0)} pts/km")
-                    st.metric("Difficulty Index", f"{ml.get('difficulty_index', 0):.3f}")
-                
-                with col2:
-                    st.metric("Route Compactness", f"{ml.get('route_compactness', 0)}")
-                    st.metric("Elevation Range", f"{ml.get('elevation_range_m', 0)} m")
-                
-                with col3:
-                    if ml.get('stop_density_per_km') is not None:
-                        st.metric("Stop Density", f"{ml.get('stop_density_per_km', 0)} stops/km")
-                    if ml.get('traffic_complexity_factor') is not None:
-                        st.metric("Traffic Complexity", f"{ml.get('traffic_complexity_factor', 0):.3f}")
-                
-                with col4:
-                    if ml.get('estimated_stop_time_penalty_min') is not None:
-                        st.metric("Stop Time Penalty", f"{ml.get('estimated_stop_time_penalty_min', 0)} min")
-                    st.metric("Elevation Variation", f"{ml.get('elevation_variation_index', 0)} m/km")
-            
-            # Weather Analysis Section
-            st.subheader("🌤️ Weather Analysis & Planning")
-            
-            # Weather input controls
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                # Departure date picker
-                departure_date = st.date_input(
-                    "Planned Departure Date",
-                    value=datetime.now().date(),
-                    min_value=datetime.now().date(),
-                    max_value=datetime.now().date() + timedelta(days=7),
-                    help="Weather forecasts are available up to 7 days in advance"
-                )
-            
-            with col2:
-                # Departure time picker
-                departure_time = st.time_input(
-                    "Planned Departure Time",
-                    value=datetime.now().time().replace(minute=0, second=0, microsecond=0),
-                    help="Enter your planned start time"
-                )
-            
-            # Combine date and time
-            departure_datetime = datetime.combine(departure_date, departure_time)
-            
-            # Weather analysis button
-            if st.button("🌤️ Analyze Weather Conditions"):
-                with st.spinner("Analyzing weather conditions along your route..."):
-                    # Collect all route points
-                    all_points = []
-                    for track in route_data.get('tracks', []):
-                        for segment in track.get('segments', []):
-                            all_points.extend(segment)
-                    for route in route_data.get('routes', []):
-                        all_points.extend(route.get('points', []))
-                    
-                    if all_points:
-                        # Get comprehensive weather analysis (no speed estimates needed)
-                        weather_analysis = weather_analyzer.get_comprehensive_weather_analysis(
-                            all_points, departure_datetime, 2.0  # Default 2-hour duration estimate
-                        )
-                        
-                        if weather_analysis.get('analysis_available'):
-                            # Weather summary
-                            st.success("✅ Weather analysis completed!")
-                            
-                            # Display key weather metrics
-                            col1, col2, col3, col4 = st.columns(4)
-                            
-                            # Wind analysis
-                            wind_data = weather_analysis.get('wind_analysis', {})
-                            if wind_data.get('analysis_available'):
-                                with col1:
-                                    st.metric(
-                                        "Avg Wind Impact", 
-                                        f"{wind_data.get('avg_headwind_component_kmh', 0)} km/h",
-                                        help="Positive = headwind, Negative = tailwind"
-                                    )
-                                    st.metric(
-                                        "Max Headwind", 
-                                        f"{wind_data.get('max_headwind_kmh', 0)} km/h"
-                                    )
-                            
-                            # Rain analysis
-                            rain_data = weather_analysis.get('precipitation_analysis', {})
-                            if rain_data.get('analysis_available'):
-                                with col2:
-                                    st.metric(
-                                        "Max Rain Chance", 
-                                        f"{rain_data.get('max_precipitation_probability', 0)}%"
-                                    )
-                                    st.metric(
-                                        "Expected Rain", 
-                                        f"{rain_data.get('expected_total_precipitation_mm', 0)} mm"
-                                    )
-                            
-                            # Temperature analysis
-                            temp_data = weather_analysis.get('temperature_analysis', {})
-                            if temp_data.get('analysis_available'):
-                                with col3:
-                                    st.metric(
-                                        "Temperature Range", 
-                                        f"{temp_data.get('min_temperature_c', 0)}° - {temp_data.get('max_temperature_c', 0)}°C"
-                                    )
-                                    st.metric(
-                                        "Heat Stress Periods", 
-                                        f"{temp_data.get('high_heat_periods', 0)}"
-                                    )
-                            
-                            # Weather recommendations
-                            recommendations = weather_analysis.get('recommendations', [])
-                            if recommendations:
-                                st.subheader("🎯 Weather Recommendations")
-                                for rec in recommendations:
-                                    if "warning" in rec.lower() or "extreme" in rec.lower() or "high chance" in rec.lower():
-                                        st.warning(rec)
-                                    elif "good" in rec.lower() or "favorable" in rec.lower():
-                                        st.success(rec)
-                                    else:
-                                        st.info(rec)
-                            
-                            # Detailed weather breakdown
-                            if st.expander("📊 Detailed Weather Analysis"):
-                                
-                                # Wind details
-                                if wind_data.get('analysis_available'):
-                                    st.write("**🌪️ Wind Conditions**")
-                                    wind_summary = wind_data.get('wind_impact_summary', '')
-                                    if wind_summary:
-                                        st.write(f"• {wind_summary}")
-                                    
-                                    col1, col2, col3 = st.columns(3)
-                                    with col1:
-                                        st.write(f"• Strong headwind sections: {wind_data.get('strong_headwind_sections', 0)}")
-                                    with col2:
-                                        st.write(f"• Tailwind sections: {wind_data.get('tailwind_sections', 0)}")
-                                    with col3:
-                                        st.write(f"• Max tailwind: {wind_data.get('max_tailwind_kmh', 0)} km/h")
-                                
-                                # Rain details
-                                if rain_data.get('analysis_available'):
-                                    st.write("**🌧️ Precipitation Conditions**")
-                                    rain_summary = rain_data.get('rain_risk_summary', '')
-                                    if rain_summary:
-                                        st.write(f"• {rain_summary}")
-                                    st.write(f"• High rain risk periods: {rain_data.get('high_rain_risk_periods', 0)}")
-                                
-                                # Temperature details
-                                if temp_data.get('analysis_available'):
-                                    st.write("**🌡️ Temperature Conditions**")
-                                    heat_summary = temp_data.get('heat_stress_summary', '')
-                                    if heat_summary:
-                                        st.write(f"• {heat_summary}")
-                                    st.write(f"• Average temperature: {temp_data.get('avg_temperature_c', 0)}°C")
-                                    st.write(f"• Temperature variation: {temp_data.get('temperature_range_c', 0)}°C")
-                                
-                                # Additional weather metrics for ML training data
-                                if weather_analysis.get('analysis_available'):
-                                    st.write("**📊 Additional Weather Metrics**")
-                                    if weather_analysis.get('uv_index_data'):
-                                        uv_data = weather_analysis['uv_index_data']
-                                        st.write(f"• Max UV Index: {uv_data.get('max_uv_index', 0)}")
-                                        st.write(f"• Average UV Index: {uv_data.get('avg_uv_index', 0):.1f}")
-                        
-                        else:
-                            error_reason = weather_analysis.get('reason', 'Unknown error')
-                            st.warning(f"⚠️ Weather analysis unavailable: {error_reason}")
-                            
-                            if "API" in error_reason or "request" in error_reason.lower():
-                                st.info("💡 Weather analysis requires an internet connection to access forecast data.")
-                    else:
-                        st.error("❌ Unable to analyze weather - insufficient route or speed data")
-            
-            else:
-                st.info("📅 Select your departure date and time above, then click 'Analyze Weather Conditions' to get detailed weather forecasts for your ride.")
-            
-            # Display route metadata
-            if route_data.get('metadata'):
-                st.subheader("📋 Route Information")
-                metadata = route_data['metadata']
-                if metadata.get('name'):
-                    st.write(f"**Name:** {metadata['name']}")
-                if metadata.get('description'):
-                    st.write(f"**Description:** {metadata['description']}")
-                if metadata.get('time'):
-                    st.write(f"**Created:** {metadata['time']}")
-            
-            # Create and display map
-            st.subheader("🗺️ Route Visualization")
-            with st.spinner("Generating map..."):
-                route_map = processor.create_route_map(route_data, stats)
-                
-                # Display the map using streamlit-folium with responsive design
-                st_folium(route_map, height=500, use_container_width=True, key="main_route_map")
-            
-            # Save route option
-            st.subheader("💾 Save Route")
-            if st.button("Save Route for Future Analysis"):
-                with st.spinner("Saving route..."):
-                    saved_path = processor.save_route(route_data, stats)
-                    st.success(f"✅ Route saved successfully!")
-                    st.info(f"Saved to: {saved_path}")
-                    
-        except Exception as e:
-            st.error(f"❌ Error processing file: {str(e)}")
-            st.info("Please ensure you've uploaded a valid GPX file.")
-
-    try:
-        # OAuth login button
-        oauth_client = StravaOAuth()
-        redirect_uri = get_redirect_uri()
-        auth_url = oauth_client.get_authorization_url(redirect_uri)
+        # Handle OAuth callback if present
+        auth_manager.handle_oauth_callback()
         
-        st.markdown(f"""
-        <a href="{auth_url}" target="_self">
-            <button style="
-                background-color: #fc4c02;
-                color: white;
-                padding: 10px 20px;
-                font-size: 16px;
-                border: none;
-                border-radius: 5px;
-                cursor: pointer;
-                text-decoration: none;
-                display: inline-block;
-            ">
-                🚴 Connect with Strava
-            </button>
-        </a>
-        """, unsafe_allow_html=True)
+        # Render main UI
+        ui_components.render_app_header()
         
-        st.info("👆 Click the button above to authorize KOMpass to access your Strava data.")
+        # Navigation and page rendering
+        selected_page = ui_components.render_navigation_sidebar()
+        logger.debug(f"User navigated to page: {selected_page}")
+        
+        # Route to appropriate page
+        if selected_page == "Home":
+            ui_components.render_home_page()
+        
+        elif selected_page == "Route Upload":
+            ui_components.render_route_upload_page()
+        
+        elif selected_page == "Saved Routes":
+            ui_components.render_saved_routes_page()
+        
+        else:
+            logger.warning(f"Unknown page selected: {selected_page}")
+            st.error(f"Unknown page: {selected_page}")
+        
+        logger.debug("Main application rendering completed")
         
     except Exception as e:
-        st.error(f"OAuth configuration error: {e}")
-        st.info("Please check your Strava API configuration.")
-    
-    # Instructions
-    with st.expander("ℹ️ What happens when you connect?"):
-        st.write("""
-        1. You'll be redirected to Strava's authorization page
-        2. You'll need to log in to Strava (if not already logged in)
-        3. You'll be asked to authorize KOMpass to access your data
-        4. After authorization, you'll be redirected back here
-        5. Your athlete information will be displayed
+        logger.error(f"Unhandled error in main application: {e}", exc_info=True)
+        st.error("An unexpected error occurred. Please check the logs for details.")
         
-        **We only request permission to read your basic profile and activity data.**
-        """)
+        # Show error details in development mode
+        if config.app.log_level == "DEBUG":
+            st.exception(e)
 
 
-elif page == "Saved Routes":
-    st.header("🗃️ Saved Routes")
-    st.markdown("View and analyze your previously uploaded routes.")
-    
-    # Initialize route processor and weather analyzer
-    processor = RouteProcessor()
-    weather_analyzer = WeatherAnalyzer()
-    
-    # Load saved routes
-    saved_routes = processor.load_saved_routes()
-    
-    if not saved_routes:
-        st.info("📭 No saved routes found. Upload some routes first!")
-    else:
-        st.write(f"Found {len(saved_routes)} saved route(s):")
-        
-        # Display saved routes
-        for i, route_info in enumerate(saved_routes):
-            with st.expander(f"📍 {route_info['name']} - {route_info['distance_km']} km"):
-                col1, col2 = st.columns(2)
-                
-                with col1:
-                    st.write(f"**Distance:** {route_info['distance_km']} km")
-                    st.write(f"**Elevation Gain:** {route_info['elevation_gain_m']} m")
-                    st.write(f"**Processed:** {route_info['processed_at'][:10]}")
-                
-                with col2:
-                    st.write(f"**File:** {route_info['filename']}")
-                
-                # Load and display button
-                if st.button(f"View Route Map", key=f"view_{i}"):
-                    try:
-                        # Load the full route data
-                        saved_data = processor.load_route_data(route_info['filepath'])
-                        route_data = saved_data['route_data']
-                        stats = saved_data['statistics']
-                        
-                        # Create and display map
-                        st.subheader(f"🗺️ {route_info['name']}")
-                        with st.spinner("Loading map..."):
-                            route_map = processor.create_route_map(route_data, stats)
-                            
-                            # Display the map using streamlit-folium with responsive design
-                            st_folium(route_map, height=400, use_container_width=True, key=f"saved_route_map_{i}")
-                                
-                    except Exception as e:
-                        st.error(f"Error loading route: {str(e)}")
+if __name__ == "__main__":
+    main()
