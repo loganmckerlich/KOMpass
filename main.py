@@ -377,13 +377,13 @@ elif page == "Route Upload":
                                     st.write(f"• Average temperature: {temp_data.get('avg_temperature_c', 0)}°C")
                                     st.write(f"• Temperature variation: {temp_data.get('temperature_range_c', 0)}°C")
                                 
-                                # Performance adjustments
-                                if adjusted_data.get('adjustment_available'):
-                                    st.write("**⚡ Weather Performance Impact**")
-                                    adjustments = adjusted_data.get('adjustments_applied', [])
-                                    if adjustments:
-                                        for adj in adjustments:
-                                            st.write(f"• {adj}")
+                                # Additional weather metrics for ML training data
+                                if weather_analysis.get('analysis_available'):
+                                    st.write("**📊 Additional Weather Metrics**")
+                                    if weather_analysis.get('uv_index_data'):
+                                        uv_data = weather_analysis['uv_index_data']
+                                        st.write(f"• Max UV Index: {uv_data.get('max_uv_index', 0)}")
+                                        st.write(f"• Average UV Index: {uv_data.get('avg_uv_index', 0):.1f}")
                         
                         else:
                             error_reason = weather_analysis.get('reason', 'Unknown error')
