@@ -1,5 +1,6 @@
 streamlit>=1.48.0
 folium>=0.20.0
+streamlit-folium>=0.23.0
 pandas>=2.3.0
 gpxpy>=1.6.2
 requests>=2.31.0
