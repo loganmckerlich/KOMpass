@@ -1,5 +1,6 @@
 import os
 import requests
+import json
 
 STRAVA_CLIENT_SECRET = os.environ.get("STRAVA_CLIENT_SECRET")
 STRAVA_ACCESS_TOKEN = os.environ.get("STRAVA_ACCESS_TOKEN")
@@ -21,4 +22,5 @@ def get_athlete():
 if __name__ == "__main__":
     athlete = get_athlete()
     print("Authenticated athlete profile:")
-    print(athlete)
+    # Safely print unicode characters
+    print(json.dumps(athlete, indent=2, ensure_ascii=False))
