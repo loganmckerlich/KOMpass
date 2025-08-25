@@ -18,9 +18,35 @@ if 'refresh_token' not in st.session_state:
 if 'athlete_data' not in st.session_state:
     st.session_state.athlete_data = None
 
-# Get redirect URI - for local development use localhost, for production use the actual URL
-# The redirect URI should match what's configured in your Strava application settings
-REDIRECT_URI = "http://localhost:8501"
+# Get redirect URI - dynamically determine based on environment
+def get_redirect_uri():
+    """
+    Determine the correct redirect URI based on the deployment environment.
+    Returns localhost for local development, kompass-dev.streamlit.app for Streamlit Cloud.
+    """
+    # Allow explicit override via environment variable
+    override_uri = os.environ.get('STRAVA_REDIRECT_URI')
+    if override_uri:
+        return override_uri
+    
+    # Auto-detect based on common environment characteristics
+    # Method 1: Check for Streamlit Cloud indicators
+    is_cloud = any([
+        # Check if we're running on a typical cloud deployment
+        os.environ.get('USER') == 'appuser',  # Streamlit Cloud default user
+        '/app' in os.environ.get('HOME', ''),  # Streamlit Cloud default home
+        'DYNO' in os.environ,  # Heroku-style deployment
+        'RENDER' in os.environ,  # Render deployment
+        'STREAMLIT_CLOUD' in os.environ,  # Explicit cloud indicator
+    ])
+    
+    if is_cloud:
+        return "https://kompass-dev.streamlit.app"
+    
+    # Default to localhost for local development
+    return "http://localhost:8501"
+
+REDIRECT_URI = get_redirect_uri()
 
 st.title("KOMpass - Strava API App")
 
@@ -131,24 +157,41 @@ else:
     # Instructions for redirect URI
     st.markdown("---")
     st.subheader("Setup Instructions")
+    
+    # Show current environment and redirect URI
+    environment = "Streamlit Cloud" if "streamlit.app" in REDIRECT_URI else "Local Development"
+    st.info(f"🌐 **Current Environment:** {environment}")
+    st.info(f"🔗 **Current Redirect URI:** `{REDIRECT_URI}`")
+    
     st.markdown(f"""
+    **Environment Variable Override:**
+    - Set `STRAVA_REDIRECT_URI` to explicitly specify the redirect URI (overrides auto-detection)
+    
     **For local development:**
     1. Go to [Strava API Settings](https://www.strava.com/settings/api)
     2. Create a new app or edit your existing app
     3. Set the **Authorization Callback Domain** to: `localhost`
-    4. The full redirect URI will be: `{REDIRECT_URI}`
-    5. Set these environment variables:
+    4. Set these environment variables:
        - `STRAVA_CLIENT_ID` (from your Strava app)
        - `STRAVA_CLIENT_SECRET` (from your Strava app)
+       - `STRAVA_REDIRECT_URI=http://localhost:8501` (optional, will auto-detect)
     
-    **For production deployment:**
-    - Update the `REDIRECT_URI` in this code to match your deployed app URL (e.g., `https://yourapp.streamlit.app`)
-    - Update your Strava app's Authorization Callback Domain accordingly
+    **For production deployment (Streamlit Cloud):**
+    1. Go to [Strava API Settings](https://www.strava.com/settings/api)
+    2. Edit your existing app
+    3. Set the **Authorization Callback Domain** to: `kompass-dev.streamlit.app`
+    4. Set the environment variables in your Streamlit app settings:
+       - `STRAVA_CLIENT_ID` (from your Strava app)
+       - `STRAVA_CLIENT_SECRET` (from your Strava app)
+       - `STRAVA_REDIRECT_URI=https://kompass-dev.streamlit.app` (optional, will auto-detect)
     
     **Common 403 Error Solutions:**
-    - Ensure the redirect URI in your Strava app matches exactly
+    - Ensure the redirect URI in your Strava app matches the current environment
     - Make sure your Strava app is approved
     - Check that your client ID and secret are correct
+    - For Streamlit Cloud: ensure the domain is set to `kompass-dev.streamlit.app`
+    - For local development: ensure the domain is set to `localhost`
+    - Use `STRAVA_REDIRECT_URI` environment variable to override auto-detection if needed
     """)
 
 # Show README content
