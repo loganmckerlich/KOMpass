@@ -178,6 +178,63 @@ elif page == "Route Upload":
                 with col3:
                     st.metric("Threshold Zone", f"{zones.get('threshold_percent', 0)}%", help=">300W")
             
+            # Traffic Stop Analysis
+            if 'traffic_analysis' in stats and stats['traffic_analysis'].get('analysis_available'):
+                st.subheader("🚦 Traffic Stop Analysis")
+                traffic = stats['traffic_analysis']
+                
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric("Traffic Lights", traffic.get('traffic_lights_detected', 0))
+                    st.metric("Major Road Crossings", traffic.get('major_road_crossings', 0))
+                
+                with col2:
+                    st.metric("Total Potential Stops", traffic.get('total_potential_stops', 0))
+                    st.metric("Stop Density", f"{traffic.get('stop_density_per_km', 0)} stops/km")
+                
+                with col3:
+                    st.metric("Avg Distance Between Stops", f"{traffic.get('average_distance_between_stops_km', 0)} km")
+                    st.metric("Est. Time Penalty", f"{traffic.get('estimated_time_penalty_minutes', 0)} min")
+                
+                # Additional traffic info
+                if traffic.get('infrastructure_summary'):
+                    summary = traffic['infrastructure_summary']
+                    st.info(f"🚦 Found {summary.get('total_traffic_lights_in_area', 0)} traffic lights and "
+                           f"{summary.get('total_major_roads_in_area', 0)} major roads in route area. "
+                           f"Identified {summary.get('route_intersections_found', 0)} potential stops on your route.")
+            
+            elif 'traffic_analysis' in stats and not stats['traffic_analysis'].get('analysis_available'):
+                st.subheader("🚦 Traffic Stop Analysis")
+                reason = stats['traffic_analysis'].get('reason', 'Unknown error')
+                st.warning(f"⚠️ Traffic analysis unavailable: {reason}")
+                if 'Unable to calculate' in reason:
+                    st.info("💡 Traffic stop analysis requires an internet connection to query OpenStreetMap data.")
+            
+            # ML Features Summary
+            if 'ml_features' in stats:
+                st.subheader("🤖 ML Training Features")
+                ml = stats['ml_features']
+                
+                col1, col2, col3, col4 = st.columns(4)
+                with col1:
+                    st.metric("Route Density", f"{ml.get('route_density_points_per_km', 0)} pts/km")
+                    st.metric("Difficulty Index", f"{ml.get('difficulty_index', 0):.3f}")
+                
+                with col2:
+                    st.metric("Route Compactness", f"{ml.get('route_compactness', 0)}")
+                    st.metric("Elevation Range", f"{ml.get('elevation_range_m', 0)} m")
+                
+                with col3:
+                    if ml.get('stop_density_per_km') is not None:
+                        st.metric("Stop Density", f"{ml.get('stop_density_per_km', 0)} stops/km")
+                    if ml.get('traffic_complexity_factor') is not None:
+                        st.metric("Traffic Complexity", f"{ml.get('traffic_complexity_factor', 0):.3f}")
+                
+                with col4:
+                    if ml.get('estimated_stop_time_penalty_min') is not None:
+                        st.metric("Stop Time Penalty", f"{ml.get('estimated_stop_time_penalty_min', 0)} min")
+                    st.metric("Elevation Variation", f"{ml.get('elevation_variation_index', 0)} m/km")
+            
             # Display route metadata
             if route_data.get('metadata'):
                 st.subheader("📋 Route Information")

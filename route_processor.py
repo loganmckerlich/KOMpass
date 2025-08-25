@@ -12,6 +12,8 @@ from typing import Dict, List, Tuple, Optional
 import folium
 from math import radians, cos, sin, asin, sqrt, atan2, degrees
 import numpy as np
+import requests
+import time
 
 
 def haversine_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -69,6 +71,10 @@ class RouteProcessor:
         """
         self.data_dir = data_dir
         self._ensure_data_dir()
+        
+        # Overpass API configuration for OpenStreetMap queries
+        self.overpass_url = "https://overpass-api.de/api/interpreter"
+        self.request_delay = 1.0  # Seconds between API requests to be respectful
     
     def _analyze_gradients(self, points: List[Dict]) -> Dict:
         """Analyze gradient characteristics of the route."""
@@ -365,6 +371,275 @@ class RouteProcessor:
             }
         }
     
+    def _query_overpass_api(self, query: str, max_retries: int = 3) -> Dict:
+        """Query the Overpass API with rate limiting and error handling."""
+        for attempt in range(max_retries):
+            try:
+                time.sleep(self.request_delay)  # Rate limiting
+                response = requests.post(
+                    self.overpass_url,
+                    data=query,
+                    headers={'Content-Type': 'text/plain; charset=utf-8'},
+                    timeout=30
+                )
+                response.raise_for_status()
+                return response.json()
+            except requests.exceptions.RequestException as e:
+                if attempt == max_retries - 1:
+                    print(f"Failed to query Overpass API after {max_retries} attempts: {e}")
+                    return {'elements': []}
+                time.sleep(2 ** attempt)  # Exponential backoff
+        return {'elements': []}
+    
+    def _get_traffic_infrastructure(self, bounds: Dict, route_points: List[Dict]) -> Dict:
+        """Query OpenStreetMap for traffic lights and major roads near the route."""
+        if not bounds:
+            return {'traffic_lights': [], 'major_roads': []}
+        
+        # Expand bounds slightly to catch nearby infrastructure
+        lat_margin = 0.002  # ~200m
+        lon_margin = 0.002
+        
+        south = bounds['south'] - lat_margin
+        north = bounds['north'] + lat_margin
+        west = bounds['west'] - lon_margin
+        east = bounds['east'] + lon_margin
+        
+        # Query for traffic lights
+        traffic_light_query = f"""
+        [out:json][timeout:25];
+        (
+          node["highway"="traffic_signals"]({south},{west},{north},{east});
+          node["traffic_signals"]({south},{west},{north},{east});
+        );
+        out geom;
+        """
+        
+        traffic_lights_data = self._query_overpass_api(traffic_light_query)
+        traffic_lights = []
+        
+        for element in traffic_lights_data.get('elements', []):
+            if element.get('type') == 'node':
+                traffic_lights.append({
+                    'lat': element['lat'],
+                    'lon': element['lon'],
+                    'tags': element.get('tags', {})
+                })
+        
+        # Query for major roads (primary, secondary, trunk roads)
+        major_roads_query = f"""
+        [out:json][timeout:25];
+        (
+          way["highway"~"^(motorway|trunk|primary|secondary)$"]({south},{west},{north},{east});
+        );
+        out geom;
+        """
+        
+        major_roads_data = self._query_overpass_api(major_roads_query)
+        major_roads = []
+        
+        for element in major_roads_data.get('elements', []):
+            if element.get('type') == 'way' and 'geometry' in element:
+                road_info = {
+                    'id': element['id'],
+                    'highway_type': element.get('tags', {}).get('highway', 'unknown'),
+                    'name': element.get('tags', {}).get('name', 'Unnamed Road'),
+                    'geometry': element['geometry']  # List of lat/lon points
+                }
+                major_roads.append(road_info)
+        
+        return {
+            'traffic_lights': traffic_lights,
+            'major_roads': major_roads
+        }
+    
+    def _find_route_intersections(self, route_points: List[Dict], infrastructure: Dict) -> Dict:
+        """Find intersections between the route and traffic infrastructure."""
+        traffic_lights = infrastructure.get('traffic_lights', [])
+        major_roads = infrastructure.get('major_roads', [])
+        
+        # Find traffic lights near route points
+        nearby_traffic_lights = []
+        traffic_light_threshold = 0.05  # ~50m in degrees
+        
+        for route_point in route_points:
+            for light in traffic_lights:
+                distance = haversine_distance(
+                    route_point['lat'], route_point['lon'],
+                    light['lat'], light['lon']
+                )
+                
+                # If within 50 meters, consider it a potential stop
+                if distance <= 0.05:  # 50m in km
+                    nearby_traffic_lights.append({
+                        'route_point_index': route_points.index(route_point),
+                        'route_lat': route_point['lat'],
+                        'route_lon': route_point['lon'],
+                        'light_lat': light['lat'],
+                        'light_lon': light['lon'],
+                        'distance_m': distance * 1000,
+                        'tags': light.get('tags', {})
+                    })
+        
+        # Find major road crossings
+        major_road_crossings = []
+        crossing_threshold = 0.02  # ~20m
+        
+        for road in major_roads:
+            road_geometry = road.get('geometry', [])
+            
+            for route_point in route_points:
+                # Check if route point is close to any segment of the major road
+                for i in range(len(road_geometry) - 1):
+                    road_start = road_geometry[i]
+                    road_end = road_geometry[i + 1]
+                    
+                    # Calculate distance from route point to road segment
+                    distance_to_road = self._point_to_line_distance(
+                        route_point['lat'], route_point['lon'],
+                        road_start['lat'], road_start['lon'],
+                        road_end['lat'], road_end['lon']
+                    )
+                    
+                    if distance_to_road <= crossing_threshold:
+                        major_road_crossings.append({
+                            'route_point_index': route_points.index(route_point),
+                            'route_lat': route_point['lat'],
+                            'route_lon': route_point['lon'],
+                            'road_name': road.get('name', 'Unnamed Road'),
+                            'highway_type': road.get('highway_type', 'unknown'),
+                            'distance_to_road_m': distance_to_road * 1000
+                        })
+                        break  # Only count once per road
+        
+        return {
+            'traffic_light_intersections': nearby_traffic_lights,
+            'major_road_crossings': major_road_crossings
+        }
+    
+    def _point_to_line_distance(self, px: float, py: float, 
+                               x1: float, y1: float, x2: float, y2: float) -> float:
+        """Calculate the shortest distance from a point to a line segment in decimal degrees."""
+        # Convert to approximate meters for calculation
+        A = px - x1
+        B = py - y1
+        C = x2 - x1
+        D = y2 - y1
+        
+        dot = A * C + B * D
+        len_sq = C * C + D * D
+        
+        if len_sq == 0:
+            # Line segment is actually a point
+            return haversine_distance(px, py, x1, y1)
+        
+        param = dot / len_sq
+        
+        if param < 0:
+            xx = x1
+            yy = y1
+        elif param > 1:
+            xx = x2
+            yy = y2
+        else:
+            xx = x1 + param * C
+            yy = y1 + param * D
+        
+        return haversine_distance(px, py, xx, yy)
+    
+    def _analyze_traffic_stops(self, points: List[Dict], stats: Dict) -> Dict:
+        """Analyze potential traffic stops along the route."""
+        if len(points) < 2 or not stats.get('bounds'):
+            return {'analysis_available': False, 'reason': 'Insufficient route data'}
+        
+        try:
+            # Get traffic infrastructure from OpenStreetMap
+            infrastructure = self._get_traffic_infrastructure(stats['bounds'], points)
+            
+            # Find intersections with route
+            intersections = self._find_route_intersections(points, infrastructure)
+            
+            # Calculate metrics
+            total_distance_km = stats.get('total_distance_km', 0)
+            traffic_lights_count = len(intersections['traffic_light_intersections'])
+            major_crossings_count = len(intersections['major_road_crossings'])
+            total_stops = traffic_lights_count + major_crossings_count
+            
+            # Remove duplicates (same intersection counted multiple times)
+            unique_traffic_lights = self._remove_duplicate_stops(
+                intersections['traffic_light_intersections'], threshold_m=100
+            )
+            unique_major_crossings = self._remove_duplicate_stops(
+                intersections['major_road_crossings'], threshold_m=50
+            )
+            
+            unique_total_stops = len(unique_traffic_lights) + len(unique_major_crossings)
+            
+            # Calculate stop density and spacing
+            stop_density = unique_total_stops / max(total_distance_km, 0.1)
+            
+            # Estimate time penalty (rough estimates)
+            # Traffic lights: 0-60 seconds (avg 20s), Major crossings: 0-10 seconds (avg 3s)
+            estimated_light_delay_minutes = len(unique_traffic_lights) * 0.33  # 20s avg per light
+            estimated_crossing_delay_minutes = len(unique_major_crossings) * 0.05  # 3s avg per crossing
+            total_estimated_delay_minutes = estimated_light_delay_minutes + estimated_crossing_delay_minutes
+            
+            # Calculate average distance between stops
+            if unique_total_stops > 1:
+                avg_distance_between_stops_km = total_distance_km / unique_total_stops
+            else:
+                avg_distance_between_stops_km = total_distance_km
+            
+            return {
+                'analysis_available': True,
+                'traffic_lights_detected': len(unique_traffic_lights),
+                'major_road_crossings': len(unique_major_crossings),
+                'total_potential_stops': unique_total_stops,
+                'stop_density_per_km': round(stop_density, 2),
+                'average_distance_between_stops_km': round(avg_distance_between_stops_km, 2),
+                'estimated_time_penalty_minutes': round(total_estimated_delay_minutes, 1),
+                'traffic_light_locations': unique_traffic_lights,
+                'major_crossing_locations': unique_major_crossings,
+                'infrastructure_summary': {
+                    'total_traffic_lights_in_area': len(infrastructure['traffic_lights']),
+                    'total_major_roads_in_area': len(infrastructure['major_roads']),
+                    'route_intersections_found': unique_total_stops
+                }
+            }
+            
+        except Exception as e:
+            return {
+                'analysis_available': False,
+                'reason': f'Error during traffic analysis: {str(e)}',
+                'estimated_stops': 'Unable to calculate'
+            }
+    
+    def _remove_duplicate_stops(self, stops: List[Dict], threshold_m: float = 50) -> List[Dict]:
+        """Remove duplicate stops that are within threshold distance of each other."""
+        if not stops:
+            return []
+        
+        unique_stops = []
+        threshold_km = threshold_m / 1000
+        
+        for stop in stops:
+            is_duplicate = False
+            
+            for unique_stop in unique_stops:
+                distance = haversine_distance(
+                    stop['route_lat'], stop['route_lon'],
+                    unique_stop['route_lat'], unique_stop['route_lon']
+                )
+                
+                if distance <= threshold_km:
+                    is_duplicate = True
+                    break
+            
+            if not is_duplicate:
+                unique_stops.append(stop)
+        
+        return unique_stops
+    
     def _ensure_data_dir(self):
         """Create data directory if it doesn't exist."""
         if not os.path.exists(self.data_dir):
@@ -548,8 +823,12 @@ class RouteProcessor:
             power_analysis = self._estimate_power_requirements(gradient_analysis, total_distance)
             stats['power_analysis'] = power_analysis
             
+            # Traffic stop analysis
+            traffic_analysis = self._analyze_traffic_stops(all_points, stats)
+            stats['traffic_analysis'] = traffic_analysis
+            
             # Additional derived metrics for ML
-            stats['ml_features'] = {
+            ml_features = {
                 'route_density_points_per_km': round(len(all_points) / max(total_distance, 0.1), 1),
                 'elevation_range_m': (stats['max_elevation_m'] - stats['min_elevation_m']) if elevations else 0,
                 'elevation_variation_index': round(stats['total_elevation_gain_m'] / max(total_distance, 0.1), 1),
@@ -562,6 +841,19 @@ class RouteProcessor:
                     complexity_analysis.get('complexity_score', 0) * 0.5
                 ) / 100, 3)
             }
+            
+            # Add traffic-related ML features
+            if traffic_analysis.get('analysis_available'):
+                ml_features.update({
+                    'stop_density_per_km': traffic_analysis.get('stop_density_per_km', 0),
+                    'estimated_stop_time_penalty_min': traffic_analysis.get('estimated_time_penalty_minutes', 0),
+                    'traffic_complexity_factor': round(
+                        traffic_analysis.get('stop_density_per_km', 0) * 0.1 + 
+                        (traffic_analysis.get('traffic_lights_detected', 0) * 0.02), 3
+                    )
+                })
+            
+            stats['ml_features'] = ml_features
         
         return stats
     
@@ -642,6 +934,26 @@ class RouteProcessor:
                         popup="End",
                         icon=folium.Icon(color='red', icon='stop')
                     ).add_to(m)
+        
+        # Add traffic infrastructure markers if available
+        if stats.get('traffic_analysis', {}).get('analysis_available'):
+            traffic_analysis = stats['traffic_analysis']
+            
+            # Add traffic light markers
+            for light in traffic_analysis.get('traffic_light_locations', []):
+                folium.Marker(
+                    [light['route_lat'], light['route_lon']],
+                    popup=f"🚦 Traffic Light (±{light['distance_m']:.0f}m)",
+                    icon=folium.Icon(color='orange', icon='exclamation-sign')
+                ).add_to(m)
+            
+            # Add major road crossing markers
+            for crossing in traffic_analysis.get('major_crossing_locations', []):
+                folium.Marker(
+                    [crossing['route_lat'], crossing['route_lon']],
+                    popup=f"🛣️ {crossing['road_name']} ({crossing['highway_type']})",
+                    icon=folium.Icon(color='purple', icon='road')
+                ).add_to(m)
         
         # Fit map to bounds
         if stats['bounds']:
