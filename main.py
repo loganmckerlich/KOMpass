@@ -1,9 +1,11 @@
 import streamlit as st
 from strava_connect import get_athlete
 from route_processor import RouteProcessor
+from weather_analyzer import WeatherAnalyzer
 import streamlit.components.v1 as components
 import tempfile
 import os
+from datetime import datetime, timedelta
 
 def read_readme(file_path="README.md"):
     try:
@@ -39,8 +41,9 @@ elif page == "Route Upload":
     st.header("📁 Upload Route File")
     st.markdown("Upload GPX files from ride tracking apps like RideWithGPS, Strava, Garmin Connect, etc.")
     
-    # Initialize route processor
+    # Initialize route processor and weather analyzer
     processor = RouteProcessor()
+    weather_analyzer = WeatherAnalyzer()
     
     # File upload
     uploaded_file = st.file_uploader(
@@ -235,6 +238,186 @@ elif page == "Route Upload":
                         st.metric("Stop Time Penalty", f"{ml.get('estimated_stop_time_penalty_min', 0)} min")
                     st.metric("Elevation Variation", f"{ml.get('elevation_variation_index', 0)} m/km")
             
+            # Weather Analysis Section
+            st.subheader("🌤️ Weather Analysis & Planning")
+            
+            # Weather input controls
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                # Departure date picker
+                departure_date = st.date_input(
+                    "Planned Departure Date",
+                    value=datetime.now().date(),
+                    min_value=datetime.now().date(),
+                    max_value=datetime.now().date() + timedelta(days=7),
+                    help="Weather forecasts are available up to 7 days in advance"
+                )
+            
+            with col2:
+                # Departure time picker
+                departure_time = st.time_input(
+                    "Planned Departure Time",
+                    value=datetime.now().time().replace(minute=0, second=0, microsecond=0),
+                    help="Enter your planned start time"
+                )
+            
+            # Combine date and time
+            departure_datetime = datetime.combine(departure_date, departure_time)
+            
+            # Weather analysis button
+            if st.button("🌤️ Analyze Weather Conditions"):
+                with st.spinner("Analyzing weather conditions along your route..."):
+                    # Collect all route points
+                    all_points = []
+                    for track in route_data.get('tracks', []):
+                        for segment in track.get('segments', []):
+                            all_points.extend(segment)
+                    for route in route_data.get('routes', []):
+                        all_points.extend(route.get('points', []))
+                    
+                    if all_points and 'speed_analysis' in stats:
+                        # Get comprehensive weather analysis
+                        weather_analysis = weather_analyzer.get_comprehensive_weather_analysis(
+                            all_points, stats['speed_analysis'], departure_datetime
+                        )
+                        
+                        if weather_analysis.get('analysis_available'):
+                            # Weather summary
+                            st.success("✅ Weather analysis completed!")
+                            
+                            # Display key weather metrics
+                            col1, col2, col3, col4 = st.columns(4)
+                            
+                            # Wind analysis
+                            wind_data = weather_analysis.get('wind_analysis', {})
+                            if wind_data.get('analysis_available'):
+                                with col1:
+                                    st.metric(
+                                        "Avg Wind Impact", 
+                                        f"{wind_data.get('avg_headwind_component_kmh', 0)} km/h",
+                                        help="Positive = headwind, Negative = tailwind"
+                                    )
+                                    st.metric(
+                                        "Max Headwind", 
+                                        f"{wind_data.get('max_headwind_kmh', 0)} km/h"
+                                    )
+                            
+                            # Rain analysis
+                            rain_data = weather_analysis.get('precipitation_analysis', {})
+                            if rain_data.get('analysis_available'):
+                                with col2:
+                                    st.metric(
+                                        "Max Rain Chance", 
+                                        f"{rain_data.get('max_precipitation_probability', 0)}%"
+                                    )
+                                    st.metric(
+                                        "Expected Rain", 
+                                        f"{rain_data.get('expected_total_precipitation_mm', 0)} mm"
+                                    )
+                            
+                            # Temperature analysis
+                            temp_data = weather_analysis.get('temperature_analysis', {})
+                            if temp_data.get('analysis_available'):
+                                with col3:
+                                    st.metric(
+                                        "Temperature Range", 
+                                        f"{temp_data.get('min_temperature_c', 0)}° - {temp_data.get('max_temperature_c', 0)}°C"
+                                    )
+                                    st.metric(
+                                        "Heat Stress Periods", 
+                                        f"{temp_data.get('high_heat_periods', 0)}"
+                                    )
+                            
+                            # Weather-adjusted performance
+                            adjusted_data = weather_analysis.get('weather_adjusted_estimates', {})
+                            if adjusted_data.get('adjustment_available'):
+                                with col4:
+                                    speed_change = adjusted_data.get('speed_change_percent', 0)
+                                    st.metric(
+                                        "Weather-Adjusted Speed", 
+                                        f"{adjusted_data.get('weather_adjusted_speed_kmh', 0)} km/h",
+                                        delta=f"{speed_change:+.1f}%"
+                                    )
+                                    additional_time = adjusted_data.get('additional_time_minutes', 0)
+                                    if additional_time > 0:
+                                        st.metric(
+                                            "Additional Time", 
+                                            f"+{additional_time:.0f} min"
+                                        )
+                                    else:
+                                        st.metric(
+                                            "Time Saved", 
+                                            f"{abs(additional_time):.0f} min"
+                                        )
+                            
+                            # Weather recommendations
+                            recommendations = weather_analysis.get('recommendations', [])
+                            if recommendations:
+                                st.subheader("🎯 Weather Recommendations")
+                                for rec in recommendations:
+                                    if "warning" in rec.lower() or "extreme" in rec.lower() or "high chance" in rec.lower():
+                                        st.warning(rec)
+                                    elif "good" in rec.lower() or "favorable" in rec.lower():
+                                        st.success(rec)
+                                    else:
+                                        st.info(rec)
+                            
+                            # Detailed weather breakdown
+                            if st.expander("📊 Detailed Weather Analysis"):
+                                
+                                # Wind details
+                                if wind_data.get('analysis_available'):
+                                    st.write("**🌪️ Wind Conditions**")
+                                    wind_summary = wind_data.get('wind_impact_summary', '')
+                                    if wind_summary:
+                                        st.write(f"• {wind_summary}")
+                                    
+                                    col1, col2, col3 = st.columns(3)
+                                    with col1:
+                                        st.write(f"• Strong headwind sections: {wind_data.get('strong_headwind_sections', 0)}")
+                                    with col2:
+                                        st.write(f"• Tailwind sections: {wind_data.get('tailwind_sections', 0)}")
+                                    with col3:
+                                        st.write(f"• Max tailwind: {wind_data.get('max_tailwind_kmh', 0)} km/h")
+                                
+                                # Rain details
+                                if rain_data.get('analysis_available'):
+                                    st.write("**🌧️ Precipitation Conditions**")
+                                    rain_summary = rain_data.get('rain_risk_summary', '')
+                                    if rain_summary:
+                                        st.write(f"• {rain_summary}")
+                                    st.write(f"• High rain risk periods: {rain_data.get('high_rain_risk_periods', 0)}")
+                                
+                                # Temperature details
+                                if temp_data.get('analysis_available'):
+                                    st.write("**🌡️ Temperature Conditions**")
+                                    heat_summary = temp_data.get('heat_stress_summary', '')
+                                    if heat_summary:
+                                        st.write(f"• {heat_summary}")
+                                    st.write(f"• Average temperature: {temp_data.get('avg_temperature_c', 0)}°C")
+                                    st.write(f"• Temperature variation: {temp_data.get('temperature_range_c', 0)}°C")
+                                
+                                # Performance adjustments
+                                if adjusted_data.get('adjustment_available'):
+                                    st.write("**⚡ Weather Performance Impact**")
+                                    adjustments = adjusted_data.get('adjustments_applied', [])
+                                    if adjustments:
+                                        for adj in adjustments:
+                                            st.write(f"• {adj}")
+                        
+                        else:
+                            error_reason = weather_analysis.get('reason', 'Unknown error')
+                            st.warning(f"⚠️ Weather analysis unavailable: {error_reason}")
+                            
+                            if "API" in error_reason or "request" in error_reason.lower():
+                                st.info("💡 Weather analysis requires an internet connection to access forecast data.")
+                    else:
+                        st.error("❌ Unable to analyze weather - insufficient route or speed data")
+            
+            else:
+                st.info("📅 Select your departure date and time above, then click 'Analyze Weather Conditions' to get detailed weather forecasts for your ride.")
+            
             # Display route metadata
             if route_data.get('metadata'):
                 st.subheader("📋 Route Information")
@@ -279,8 +462,9 @@ elif page == "Saved Routes":
     st.header("🗃️ Saved Routes")
     st.markdown("View and analyze your previously uploaded routes.")
     
-    # Initialize route processor
+    # Initialize route processor and weather analyzer
     processor = RouteProcessor()
+    weather_analyzer = WeatherAnalyzer()
     
     # Load saved routes
     saved_routes = processor.load_saved_routes()
