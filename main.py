@@ -21,7 +21,7 @@ if 'athlete_data' not in st.session_state:
 # Get redirect URI - dynamically determine based on environment
 def get_redirect_uri():
     """
-    Determine the correct redirect URI based on the deployment environment.
+    Get the redirect URI for OAuth based on deployment environment.
     Returns localhost for local development, kompass-dev.streamlit.app for Streamlit Cloud.
     """
     # Allow explicit override via environment variable
@@ -29,24 +29,21 @@ def get_redirect_uri():
     if override_uri:
         return override_uri
     
-    # Auto-detect based on common environment characteristics
-    # Method 1: Check for Streamlit Cloud indicators
-    is_cloud = any([
-        # Check if we're running on a typical cloud deployment
+    # Auto-detect environment - simplified for Streamlit Cloud only
+    # Check if we're running on Streamlit Cloud
+    is_streamlit_cloud = any([
         os.environ.get('USER') == 'appuser',  # Streamlit Cloud default user
-        '/app' in os.environ.get('HOME', ''),  # Streamlit Cloud default home
-        'DYNO' in os.environ,  # Heroku-style deployment
-        'RENDER' in os.environ,  # Render deployment
+        '/app' in os.environ.get('HOME', ''),  # Streamlit Cloud default home path
         'STREAMLIT_CLOUD' in os.environ,  # Explicit cloud indicator
     ])
     
-    if is_cloud:
+    if is_streamlit_cloud:
         return "https://kompass-dev.streamlit.app"
-    
-    # Default to localhost for local development
-    return "http://localhost:8501"
+    else:
+        # Local development
+        return "http://localhost:8501"
 
-REDIRECT_URI = get_redirect_uri()
+
 
 st.title("KOMpass - Strava API App")
 
@@ -56,7 +53,7 @@ if 'code' in query_params and not st.session_state.access_token:
     code = query_params['code']
     try:
         # Exchange code for tokens
-        token_response = exchange_code_for_tokens(code, REDIRECT_URI)
+        token_response = exchange_code_for_tokens(code, get_redirect_uri())
         st.session_state.access_token = token_response['access_token']
         st.session_state.refresh_token = token_response['refresh_token']
         
@@ -146,9 +143,12 @@ else:
         st.error("❌ STRAVA_CLIENT_ID environment variable is not set. Please configure it in your app settings.")
         st.stop()
     
+    # Get current redirect URI for this environment
+    redirect_uri = get_redirect_uri()
+    
     # Generate authorization URL
     auth_url = get_authorization_url(
-        redirect_uri=REDIRECT_URI,
+        redirect_uri=redirect_uri,
         scope="read,activity:read_all"  # Adjust scopes as needed
     )
     
@@ -158,14 +158,24 @@ else:
     st.markdown("---")
     st.subheader("Setup Instructions")
     
-    # Show current environment and redirect URI
-    environment = "Streamlit Cloud" if "streamlit.app" in REDIRECT_URI else "Local Development"
-    st.info(f"🌐 **Current Environment:** {environment}")
-    st.info(f"🔗 **Current Redirect URI:** `{REDIRECT_URI}`")
+    # Show current environment and redirect URI  
+    redirect_uri = get_redirect_uri()
+    is_cloud = "streamlit.app" in redirect_uri
+    environment = "Streamlit Cloud" if is_cloud else "Local Development"
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        st.info(f"🌍 **Current Environment:** {environment}")
+    with col2:
+        st.info(f"🔗 **Current Redirect URI:** `{redirect_uri}`")
     
     st.markdown(f"""
     **Environment Variable Override:**
     - Set `STRAVA_REDIRECT_URI` to explicitly specify the redirect URI (overrides auto-detection)
+    
+    **Current Configuration:**
+    - Environment: {environment}
+    - Redirect URI: `{redirect_uri}`
     
     **For local development:**
     1. Go to [Strava API Settings](https://www.strava.com/settings/api)
@@ -176,7 +186,7 @@ else:
        - `STRAVA_CLIENT_SECRET` (from your Strava app)
        - `STRAVA_REDIRECT_URI=http://localhost:8501` (optional, will auto-detect)
     
-    **For production deployment (Streamlit Cloud):**
+    **For Streamlit Cloud deployment:**
     1. Go to [Strava API Settings](https://www.strava.com/settings/api)
     2. Edit your existing app
     3. Set the **Authorization Callback Domain** to: `kompass-dev.streamlit.app`
