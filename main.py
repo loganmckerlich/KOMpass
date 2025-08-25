@@ -1,6 +1,7 @@
 import streamlit as st
-from strava_connect import get_athlete, get_authorization_url, exchange_code_for_token
+from strava_oauth import StravaOAuth
 import urllib.parse
+import os
 
 def read_readme(file_path="README.md"):
     try:
@@ -16,9 +17,12 @@ def handle_oauth_callback():
     if "code" in query_params:
         authorization_code = query_params["code"]
         try:
+            # Initialize OAuth client
+            oauth_client = StravaOAuth()
+            
             # Exchange code for token
             redirect_uri = get_redirect_uri()
-            token_data = exchange_code_for_token(authorization_code, redirect_uri)
+            token_data = oauth_client.exchange_code_for_token(authorization_code, redirect_uri)
             
             # Store tokens in session state
             st.session_state["access_token"] = token_data["access_token"]
@@ -40,9 +44,13 @@ def handle_oauth_callback():
 
 def get_redirect_uri():
     """Get the redirect URI for OAuth"""
-    # For development/demo purposes, use localhost
-    # In production, this should be the actual domain where the app is hosted
-    return "https://kompass-dev.streamlit.app/"
+    # Check if we're running locally for development
+    if os.environ.get("STREAMLIT_ENV") == "development":
+        return "http://localhost:8501"
+    
+    # For production, use the actual deployed URL
+    # This should match exactly what's configured in Strava API settings
+    return "https://kompass-dev.streamlit.app"
 
 def is_authenticated():
     """Check if user is authenticated"""
@@ -80,8 +88,10 @@ if is_authenticated():
     # Strava Athlete Info Section
     st.header("Your Strava Information")
     try:
+        # Initialize OAuth client and get athlete info
+        oauth_client = StravaOAuth()
         access_token = st.session_state["access_token"]
-        athlete = get_athlete(access_token)
+        athlete = oauth_client.get_athlete(access_token)
         
         col1, col2 = st.columns(2)
         with col1:
@@ -112,29 +122,35 @@ if is_authenticated():
 else:
     st.info("Connect your Strava account to view your athlete information.")
     
-    # OAuth login button
-    redirect_uri = get_redirect_uri()
-    auth_url = get_authorization_url(redirect_uri)
-    
-    st.markdown(f"""
-    <a href="{auth_url}" target="_self">
-        <button style="
-            background-color: #fc4c02;
-            color: white;
-            padding: 10px 20px;
-            font-size: 16px;
-            border: none;
-            border-radius: 5px;
-            cursor: pointer;
-            text-decoration: none;
-            display: inline-block;
-        ">
-            🚴 Connect with Strava
-        </button>
-    </a>
-    """, unsafe_allow_html=True)
-    
-    st.info("👆 Click the button above to authorize KOMpass to access your Strava data.")
+    try:
+        # OAuth login button
+        oauth_client = StravaOAuth()
+        redirect_uri = get_redirect_uri()
+        auth_url = oauth_client.get_authorization_url(redirect_uri)
+        
+        st.markdown(f"""
+        <a href="{auth_url}" target="_self">
+            <button style="
+                background-color: #fc4c02;
+                color: white;
+                padding: 10px 20px;
+                font-size: 16px;
+                border: none;
+                border-radius: 5px;
+                cursor: pointer;
+                text-decoration: none;
+                display: inline-block;
+            ">
+                🚴 Connect with Strava
+            </button>
+        </a>
+        """, unsafe_allow_html=True)
+        
+        st.info("👆 Click the button above to authorize KOMpass to access your Strava data.")
+        
+    except Exception as e:
+        st.error(f"OAuth configuration error: {e}")
+        st.info("Please check your Strava API configuration.")
     
     # Instructions
     with st.expander("ℹ️ What happens when you connect?"):
