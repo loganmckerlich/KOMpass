@@ -94,6 +94,31 @@ class S3Config:
         )
 
 
+@dataclass
+class FirebaseConfig:
+    """Firebase storage configuration."""
+    project_id: str = ""
+    storage_bucket: str = ""
+    service_account_key_path: str = ""
+    service_account_key_json: str = ""
+    enabled: bool = False
+    max_file_size_mb: int = 50  # Conservative limit
+    max_user_storage_mb: int = 100  # Per-user storage limit
+    
+    def is_configured(self) -> bool:
+        """Check if Firebase is properly configured."""
+        has_credentials = bool(
+            self.service_account_key_path or 
+            self.service_account_key_json
+        )
+        return bool(
+            self.project_id and 
+            self.storage_bucket and
+            has_credentials and
+            self.enabled
+        )
+
+
 class ConfigManager:
     """Centralized configuration manager for the KOMpass application."""
     
@@ -105,6 +130,7 @@ class ConfigManager:
         self._weather_config = None
         self._performance_config = None
         self._s3_config = None
+        self._firebase_config = None
         
         self._load_configurations()
     
@@ -116,6 +142,7 @@ class ConfigManager:
             self._weather_config = self._load_weather_config()
             self._performance_config = self._load_performance_config()
             self._s3_config = self._load_s3_config()
+            self._firebase_config = self._load_firebase_config()
             
             logger.info("All configurations loaded successfully")
             
@@ -209,6 +236,25 @@ class ConfigManager:
         
         return config
     
+    def _load_firebase_config(self) -> FirebaseConfig:
+        """Load Firebase storage configuration."""
+        config = FirebaseConfig(
+            project_id=os.environ.get("FIREBASE_PROJECT_ID", ""),
+            storage_bucket=os.environ.get("FIREBASE_STORAGE_BUCKET", ""),
+            service_account_key_path=os.environ.get("FIREBASE_SERVICE_ACCOUNT_KEY", ""),
+            service_account_key_json=os.environ.get("FIREBASE_SERVICE_ACCOUNT_JSON", ""),
+            enabled=os.environ.get("FIREBASE_STORAGE_ENABLED", "false").lower() == "true",
+            max_file_size_mb=int(os.environ.get("FIREBASE_MAX_FILE_SIZE_MB", "50")),
+            max_user_storage_mb=int(os.environ.get("FIREBASE_MAX_USER_STORAGE_MB", "100"))
+        )
+        
+        if config.enabled:
+            logger.info(f"Firebase storage enabled - Project: {config.project_id}")
+        else:
+            logger.debug("Firebase storage disabled - using local storage")
+        
+        return config
+    
     @property
     def strava(self) -> StravaConfig:
         """Get Strava configuration."""
@@ -234,6 +280,11 @@ class ConfigManager:
         """Get S3 storage configuration."""
         return self._s3_config
     
+    @property
+    def firebase(self) -> FirebaseConfig:
+        """Get Firebase storage configuration."""
+        return self._firebase_config
+    
     def is_strava_configured(self) -> bool:
         """Check if Strava API is properly configured."""
         return (
@@ -253,6 +304,7 @@ class ConfigManager:
             "log_level": self._app_config.log_level,
             "weather_service": self._weather_config.base_url,
             "s3_enabled": self._s3_config.enabled,
+            "firebase_enabled": self._firebase_config.enabled,
             "s3_configured": self._s3_config.is_configured(),
         }
     
@@ -288,6 +340,18 @@ class ConfigManager:
             validation_results["s3_configured"] = self._s3_config.is_configured()
         else:
             validation_results["s3_disabled"] = True
+        
+        # Validate Firebase config (only if enabled)
+        if self._firebase_config.enabled:
+            validation_results["firebase_project_id"] = bool(self._firebase_config.project_id)
+            validation_results["firebase_storage_bucket"] = bool(self._firebase_config.storage_bucket)
+            validation_results["firebase_service_account"] = bool(
+                self._firebase_config.service_account_key_path or 
+                self._firebase_config.service_account_key_json
+            )
+            validation_results["firebase_configured"] = self._firebase_config.is_configured()
+        else:
+            validation_results["firebase_disabled"] = True
         
         # Ensure all values are boolean before summing to prevent TypeError
         passed_checks = sum(bool(v) for v in validation_results.values())
