@@ -507,50 +507,6 @@ header {visibility: hidden;}
 
 /* Mobile-specific Streamlit optimizations */
 @media (max-width: 768px) {
-    /* Fix sidebar expand button positioning (when sidebar is collapsed) */
-    button[data-testid="stExpandSidebarButton"] {
-        position: fixed !important;
-        top: 10px !important;
-        left: 10px !important;
-        z-index: 999 !important;
-        width: 36px !important;
-        height: 36px !important;
-        background: rgba(252, 76, 2, 0.1) !important;
-        border: 1px solid var(--strava-orange) !important;
-        border-radius: 6px !important;
-        color: var(--strava-orange) !important;
-    }
-    
-    /* Fix sidebar collapse button positioning (when sidebar is open) - be more specific */
-    .stApp > header button[data-testid="stBaseButton-headerNoPadding"] {
-        position: fixed !important;
-        top: 10px !important;
-        left: 10px !important;
-        z-index: 999 !important;
-        width: 36px !important;
-        height: 36px !important;
-        background: rgba(252, 76, 2, 0.1) !important;
-        border: 1px solid var(--strava-orange) !important;
-        border-radius: 6px !important;
-        color: var(--strava-orange) !important;
-    }
-    
-    /* Ensure app menu and other header buttons stay in top-right */
-    button[data-testid="stBaseButton-header"] {
-        position: fixed !important;
-        top: 10px !important;
-        right: 50px !important; /* Give more space for multiple buttons */
-        z-index: 1000 !important;
-    }
-    
-    /* Any remaining header buttons should also stay in the right area */
-    .stApp > header button:not([data-testid="stBaseButton-headerNoPadding"]):not([data-testid="stExpandSidebarButton"]) {
-        position: fixed !important;
-        top: 10px !important;
-        right: 10px !important;
-        z-index: 1000 !important;
-    }
-    
     /* Optimize column layouts for mobile */
     .stColumns {
         gap: 0.5rem;
