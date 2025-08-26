@@ -69,6 +69,9 @@ def main():
         elif selected_page == "Saved Routes":
             ui_components.render_saved_routes_page()
         
+        elif selected_page == "Rider Fitness":
+            ui_components.render_rider_fitness_page()
+        
         else:
             logger.warning(f"Unknown page selected: {selected_page}")
             st.error(f"Unknown page: {selected_page}")

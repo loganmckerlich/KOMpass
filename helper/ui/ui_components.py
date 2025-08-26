@@ -91,7 +91,7 @@ class UIComponents:
             st.markdown("##### ⚙️")
             enable_custom_css = st.toggle(
                 "Custom Styling", 
-                value=True,
+                value=False,
                 key="enable_custom_css",
                 help="Enable Strava-inspired custom styling. Disable to use default Streamlit styling."
             )
@@ -106,7 +106,7 @@ class UIComponents:
     def _load_custom_css(self):
         """Load custom CSS for Strava-inspired styling."""
         # Check if custom CSS is enabled
-        enable_custom_css = getattr(st.session_state, 'enable_custom_css', True)
+        enable_custom_css = getattr(st.session_state, 'enable_custom_css', False)
         
         if not enable_custom_css:
             # Skip loading custom CSS if disabled by user
@@ -168,7 +168,8 @@ class UIComponents:
         page_options = {
             "🏠 Dashboard": "Home",
             "📈 Upload Route": "Route Upload", 
-            "💾 My Routes": "Saved Routes"
+            "💾 My Routes": "Saved Routes",
+            "🏃‍♂️ Rider Fitness": "Rider Fitness"
         }
         
         selected_display = st.sidebar.selectbox("Page Navigation", list(page_options.keys()), label_visibility="collapsed")
@@ -1077,6 +1078,57 @@ class UIComponents:
         
         logger.info(f"Displayed {len(saved_routes)} saved routes")
         log_function_exit(logger, "render_saved_routes_page", "Success")
+    
+    def render_rider_fitness_page(self):
+        """Render the rider fitness page with comprehensive fitness data."""
+        log_function_entry(logger, "render_rider_fitness_page")
+        
+        st.markdown("""
+        <div class="welcome-section">
+            <h2>🏃‍♂️ Rider Fitness Dashboard</h2>
+            <p>Comprehensive fitness data and analysis from your Strava profile</p>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        # Check if user is authenticated
+        if not self.auth_manager.is_authenticated():
+            st.warning("⚠️ Please authenticate with Strava to view your fitness data.")
+            st.info("💡 Use the Authentication section in the sidebar to connect your Strava account.")
+            
+            # Show sample/placeholder content
+            st.markdown("### 📊 Sample Fitness Dashboard")
+            st.info("This is what your fitness dashboard will look like once you connect your Strava account:")
+            
+            # Sample metrics
+            col1, col2, col3, col4 = st.columns(4)
+            with col1:
+                st.metric("Weekly Distance", "125 km", "12 km")
+            with col2:
+                st.metric("Avg Power", "250 W", "5 W")
+            with col3:
+                st.metric("Training Load", "280 TSS", "-15 TSS")
+            with col4:
+                st.metric("Fitness (CTL)", "45", "2")
+            
+            # Sample chart placeholder
+            st.markdown("### 📈 Training Trends")
+            st.info("Charts showing your power trends, training load, and fitness progression will appear here.")
+            
+            log_function_exit(logger, "render_rider_fitness_page", "Not authenticated")
+            return
+        
+        # User is authenticated, show actual fitness data
+        try:
+            # Call the auth manager's rider fitness data rendering method
+            self.auth_manager._render_rider_fitness_data()
+            
+        except Exception as e:
+            log_error(logger, e, "Error rendering rider fitness data")
+            st.error(f"❌ Error loading fitness data: {str(e)}")
+            st.info("💡 Try refreshing the page or check your Strava connection.")
+        
+        log_function_exit(logger, "render_rider_fitness_page", "Success")
+    
     
     def _render_saved_route_item(self, route_info: Dict, index: int):
         """Render a single saved route item."""
