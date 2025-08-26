@@ -313,26 +313,13 @@ class AuthenticationManager:
         auth_url = self.get_authorization_url()
         
         if auth_url:
-            st.markdown(f"""
-            <a href="{auth_url}" target="_self">
-                <button style="
-                    background-color: #fc4c02;
-                    color: white;
-                    padding: 12px 24px;
-                    font-size: 16px;
-                    font-weight: bold;
-                    border: none;
-                    border-radius: 8px;
-                    cursor: pointer;
-                    text-decoration: none;
-                    display: inline-block;
-                    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-                    transition: background-color 0.3s;
-                ">
-                    🚴 Connect with Strava
-                </button>
-            </a>
-            """, unsafe_allow_html=True)
+            # Use st.link_button instead of custom HTML button
+            st.link_button(
+                "🚴 Connect with Strava",
+                auth_url,
+                help="Authorize KOMpass to access your Strava data",
+                type="primary"
+            )
             
             st.info("👆 Click the button above to authorize KOMpass to access your Strava data.")
             
