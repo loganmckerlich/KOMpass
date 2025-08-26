@@ -219,6 +219,10 @@
 }
 
 /* Logo styling */
+.app-logo-container {
+    transition: all 0.3s ease;
+}
+
 .app-logo {
     width: 60px;
     height: 60px;
@@ -289,28 +293,208 @@
     letter-spacing: 1px;
 }
 
-/* Responsive design */
+/* Mobile responsive design */
 @media (max-width: 768px) {
+    /* Main layout adjustments */
+    .stApp {
+        font-size: 16px; /* Better base font size for mobile */
+    }
+    
+    /* Header mobile optimization */
     .main-header {
-        padding: 1rem;
+        padding: 1rem 1rem;
         text-align: center;
+        border-radius: 0 0 15px 15px; /* Smaller border radius for mobile */
     }
     
     .main-header h1 {
         font-size: 2rem;
+        line-height: 1.2;
     }
     
+    .main-header p {
+        font-size: 1rem;
+        margin: 0.5rem 0 0 0;
+    }
+    
+    /* Logo adjustments for mobile */
+    .app-logo-container {
+        width: 60px !important;
+        height: 60px !important;
+        font-size: 1.5rem !important;
+        margin: 0.5rem auto !important;
+    }
+    
+    /* Dashboard grid mobile optimization */
     .dashboard-grid {
         grid-template-columns: 1fr;
         gap: 1rem;
+        margin: 1rem 0;
     }
     
+    /* Feature cards mobile optimization */
+    .feature-card {
+        padding: 1.5rem 1rem;
+        margin-bottom: 1rem;
+    }
+    
+    .feature-card .feature-icon {
+        font-size: 2.5rem;
+        margin-bottom: 0.8rem;
+    }
+    
+    .feature-card h3 {
+        font-size: 1.1rem;
+        margin-bottom: 0.8rem;
+    }
+    
+    .feature-card p {
+        font-size: 0.9rem;
+        line-height: 1.5;
+    }
+    
+    /* Metric cards mobile optimization */
     .metric-card {
-        padding: 1.5rem;
+        padding: 1.5rem 1rem;
+        margin: 1rem 0;
+    }
+    
+    .metric-card .metric-value {
+        font-size: 2rem;
+    }
+    
+    .metric-card .metric-label {
+        font-size: 0.8rem;
+    }
+    
+    /* Welcome section mobile optimization */
+    .welcome-section {
+        padding: 2rem 1rem;
+        margin: 1rem 0;
+        border-radius: 15px;
+    }
+    
+    .welcome-section h2 {
+        font-size: 2rem;
+        line-height: 1.3;
+    }
+    
+    .welcome-section p {
+        font-size: 1rem;
+        line-height: 1.5;
+    }
+    
+    /* Stats grid mobile optimization */
+    .stats-grid {
+        grid-template-columns: repeat(2, 1fr); /* 2 columns on mobile */
+        gap: 1rem;
+    }
+    
+    .stat-value {
+        font-size: 1.5rem;
+    }
+    
+    .stat-label {
+        font-size: 0.8rem;
+    }
+    
+    /* Button mobile optimization */
+    .stButton > button {
+        padding: 0.8rem 1.5rem;
+        font-size: 0.9rem;
+        min-height: 44px; /* Minimum touch target size */
+        width: 100%; /* Full width buttons on mobile */
+        margin-bottom: 0.5rem;
+    }
+    
+    /* File uploader mobile optimization */
+    .stFileUploader {
+        padding: 1.5rem 1rem;
+        text-align: center;
+    }
+    
+    /* Sidebar mobile adjustments */
+    .css-1d391kg {
+        padding: 1rem 0.5rem;
+    }
+    
+    /* Form elements mobile optimization */
+    .stSelectbox > div > div,
+    .stTextInput > div > div > input,
+    .stTextArea > div > div > textarea {
+        font-size: 16px !important; /* Prevent zoom on iOS */
+        min-height: 44px; /* Better touch target */
+    }
+    
+    /* Navigation mobile optimization */
+    .nav-section {
+        padding: 0.8rem;
+        margin-bottom: 0.8rem;
+        border-radius: 10px;
+    }
+    
+    .nav-section h3 {
+        font-size: 1rem;
+        margin-bottom: 0.8rem;
+    }
+    
+    /* Map container mobile optimization */
+    div[data-testid="stVerticalBlock"] > div:has(iframe[title="streamlit_folium.st_folium"]) {
+        min-height: 300px; /* Smaller min-height for mobile */
+    }
+}
+
+/* Small mobile devices (phones in portrait) */
+@media (max-width: 480px) {
+    /* Further optimizations for very small screens */
+    .main-header {
+        padding: 0.8rem;
+    }
+    
+    .main-header h1 {
+        font-size: 1.8rem;
+    }
+    
+    .feature-card,
+    .metric-card {
+        padding: 1rem;
     }
     
     .welcome-section {
-        padding: 2rem 1rem;
+        padding: 1.5rem 0.8rem;
+    }
+    
+    .welcome-section h2 {
+        font-size: 1.8rem;
+    }
+    
+    /* Single column stats on very small screens */
+    .stats-grid {
+        grid-template-columns: 1fr;
+        gap: 0.8rem;
+    }
+    
+    /* Smaller touch targets for very constrained space */
+    .stButton > button {
+        padding: 0.7rem 1rem;
+        font-size: 0.85rem;
+        min-height: 40px;
+    }
+}
+
+/* Tablet responsive design */
+@media (min-width: 769px) and (max-width: 1024px) {
+    .dashboard-grid {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 1.5rem;
+    }
+    
+    .stats-grid {
+        grid-template-columns: repeat(3, 1fr);
+    }
+    
+    .main-header h1 {
+        font-size: 2.2rem;
     }
 }
 
@@ -320,3 +504,66 @@ footer {visibility: hidden;}
 header {visibility: hidden;}
 
 .stDeployButton {display: none;}
+
+/* Mobile-specific Streamlit optimizations */
+@media (max-width: 768px) {
+    /* Hide hamburger menu on mobile if sidebar is always visible */
+    .css-1rs6os.edgvbvh3 {
+        display: none;
+    }
+    
+    /* Optimize column layouts for mobile */
+    .stColumns {
+        gap: 0.5rem;
+    }
+    
+    /* Better spacing for mobile containers */
+    .stContainer > div {
+        padding: 0.5rem;
+    }
+    
+    /* Improve mobile scrolling */
+    .stApp {
+        -webkit-overflow-scrolling: touch;
+    }
+    
+    /* Better mobile sidebar behavior */
+    .css-1d391kg {
+        min-width: 250px;
+        max-width: 280px;
+    }
+}
+
+/* Touch-friendly improvements */
+@media (pointer: coarse) {
+    /* Larger touch targets for touch devices */
+    .stButton > button,
+    .stSelectbox,
+    .stToggle,
+    .stCheckbox {
+        min-height: 44px;
+    }
+    
+    /* Better spacing for touch interactions */
+    .stSelectbox {
+        margin-bottom: 0.8rem;
+    }
+    
+    /* Improve touch feedback */
+    .stButton > button:active {
+        transform: translateY(0);
+        box-shadow: 0 2px 10px rgba(252, 76, 2, 0.4);
+    }
+}
+
+/* High DPI display optimizations */
+@media (-webkit-min-device-pixel-ratio: 2), (min-resolution: 192dpi) {
+    /* Crisp text rendering on high DPI screens */
+    .main-header h1,
+    .feature-card h3,
+    .metric-card h3 {
+        text-rendering: optimizeLegibility;
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+    }
+}

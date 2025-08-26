@@ -38,13 +38,13 @@ class UIComponents:
         # Load custom CSS
         self._load_custom_css()
         
-        # Create header with logo and title
-        header_col1, header_col2 = st.columns([1, 4])
+        # Create responsive header with logo and title
+        header_col1, header_col2 = st.columns([1, 5])  # Better proportion for mobile
         
         with header_col1:
-            # Logo placeholder - will be replaced when logo is available
+            # Responsive logo with mobile-optimized styling
             st.markdown("""
-            <div style="
+            <div class="app-logo-container" style="
                 width: 80px; 
                 height: 80px; 
                 background: linear-gradient(45deg, #FC4C02, #FF6B35);
@@ -55,7 +55,8 @@ class UIComponents:
                 color: white;
                 font-size: 2rem;
                 font-weight: bold;
-                margin: 1rem 0;
+                margin: 1rem auto;
+                box-shadow: 0 4px 15px rgba(252, 76, 2, 0.3);
             ">
                 🧭
             </div>
