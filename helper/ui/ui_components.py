@@ -71,12 +71,20 @@ class UIComponents:
                 """, unsafe_allow_html=True)
         
         with header_col2:
-            st.markdown("""
-            <div class="main-header">
-                <h1>KOMpass</h1>
-                <p>Your intelligent cycling route analysis companion</p>
-            </div>
-            """, unsafe_allow_html=True)
+            # Check if custom CSS is enabled for conditional styling
+            enable_custom_css = getattr(st.session_state, 'enable_custom_css', True)
+            
+            if enable_custom_css:
+                st.markdown("""
+                <div class="main-header">
+                    <h1>KOMpass</h1>
+                    <p>Your intelligent cycling route analysis companion</p>
+                </div>
+                """, unsafe_allow_html=True)
+            else:
+                # Simple header without custom styling
+                st.title("🧭 KOMpass")
+                st.markdown("*Your intelligent cycling route analysis companion*")
         
         # Minimal authentication in sidebar
         with st.sidebar:
@@ -85,6 +93,13 @@ class UIComponents:
     
     def _load_custom_css(self):
         """Load custom CSS for Strava-inspired styling."""
+        # Check if custom CSS is enabled
+        enable_custom_css = getattr(st.session_state, 'enable_custom_css', True)
+        
+        if not enable_custom_css:
+            # Skip loading custom CSS if disabled by user
+            return
+            
         try:
             with open("assets/style.css", "r") as f:
                 css = f.read()
@@ -147,8 +162,22 @@ class UIComponents:
         selected_display = st.sidebar.selectbox("Page Navigation", list(page_options.keys()), label_visibility="collapsed")
         selected_page = page_options[selected_display]
         
-        # Compact unit toggle
+        # Settings section
         st.sidebar.markdown("---")
+        st.sidebar.markdown("### ⚙️ Settings")
+        
+        # CSS toggle
+        enable_custom_css = st.sidebar.toggle(
+            "Custom Styling", 
+            value=True,
+            key="enable_custom_css",
+            help="Enable Strava-inspired custom styling. Disable to use default Streamlit styling."
+        )
+        
+        # Store CSS preference in session state
+        st.session_state.enable_custom_css = enable_custom_css
+        
+        # Unit toggle
         st.sidebar.markdown("### ⚖️ Units")
         use_imperial = st.sidebar.toggle(
             "Imperial (mi/ft)", 
