@@ -19,8 +19,8 @@ from helper.ui.ui_components import get_ui_components
 
 # Configure page settings
 st.set_page_config(
-    page_title="KOMpass - Route Analysis & Planning",
-    page_icon="🚴",
+    page_title="KOMpass - Cycling Route Analysis",
+    page_icon="🧭",
     layout="wide",
     initial_sidebar_state="expanded"
 )

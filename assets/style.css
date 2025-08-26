@@ -1,0 +1,569 @@
+/* KOMpass - Strava-inspired styling */
+
+/* Import Strava-like fonts */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+/* Root variables for Strava color scheme */
+:root {
+    --strava-orange: #FC4C02;
+    --strava-dark-orange: #E34D00;
+    --strava-light-orange: #FF6B35;
+    --strava-dark: #2D2D2D;
+    --strava-darker: #1A1A1A;
+    --strava-gray: #8A8A8A;
+    --strava-light-gray: #F5F5F5;
+    --strava-white: #FFFFFF;
+    --strava-success: #4CAF50;
+    --strava-warning: #FF9800;
+    --strava-error: #F44336;
+}
+
+/* Global styling */
+.stApp {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: linear-gradient(135deg, #f5f5f5 0%, #e8e8e8 100%);
+}
+
+/* Header styling */
+.main-header {
+    background: linear-gradient(90deg, var(--strava-orange) 0%, var(--strava-dark-orange) 100%);
+    color: var(--strava-white);
+    padding: 1.5rem 2rem;
+    border-radius: 0 0 20px 20px;
+    margin-bottom: 2rem;
+    box-shadow: 0 4px 20px rgba(252, 76, 2, 0.3);
+}
+
+.main-header h1 {
+    margin: 0;
+    font-weight: 700;
+    font-size: 2.5rem;
+    text-shadow: 0 2px 4px rgba(0,0,0,0.3);
+}
+
+.main-header p {
+    margin: 0.5rem 0 0 0;
+    opacity: 0.9;
+    font-weight: 400;
+}
+
+/* Sidebar styling */
+.css-1d391kg {
+    background: var(--strava-darker);
+    color: var(--strava-white);
+}
+
+.css-1d391kg .stSelectbox label {
+    color: var(--strava-white) !important;
+    font-weight: 500;
+}
+
+.css-1d391kg .stCheckbox label {
+    color: var(--strava-white) !important;
+}
+
+/* Navigation styling */
+.nav-section {
+    background: var(--strava-dark);
+    border-radius: 15px;
+    padding: 1rem;
+    margin-bottom: 1rem;
+    border: 1px solid var(--strava-orange);
+}
+
+.nav-section h3 {
+    color: var(--strava-orange);
+    margin-bottom: 1rem;
+    font-weight: 600;
+}
+
+/* Button styling */
+.stButton > button {
+    background: var(--strava-orange);
+    color: var(--strava-white);
+    border: none;
+    border-radius: 25px;
+    padding: 0.75rem 2rem;
+    font-weight: 600;
+    transition: all 0.3s ease;
+    box-shadow: 0 4px 15px rgba(252, 76, 2, 0.3);
+}
+
+.stButton > button:hover {
+    background: var(--strava-dark-orange);
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(252, 76, 2, 0.4);
+}
+
+/* Metric cards */
+.metric-card {
+    background: var(--strava-white);
+    border-radius: 15px;
+    padding: 2rem;
+    margin: 1rem 0;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+    border-left: 4px solid var(--strava-orange);
+    transition: all 0.3s ease;
+}
+
+.metric-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 8px 30px rgba(0,0,0,0.15);
+}
+
+.metric-card h3 {
+    color: var(--strava-dark);
+    margin-bottom: 1rem;
+    font-weight: 600;
+}
+
+.metric-card .metric-value {
+    font-size: 2.5rem;
+    font-weight: 700;
+    color: var(--strava-orange);
+    margin-bottom: 0.5rem;
+}
+
+.metric-card .metric-label {
+    color: var(--strava-gray);
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    font-size: 0.9rem;
+}
+
+/* Dashboard grid */
+.dashboard-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 2rem;
+    margin: 2rem 0;
+}
+
+/* Feature cards */
+.feature-card {
+    background: var(--strava-white);
+    border-radius: 15px;
+    padding: 2rem;
+    text-align: center;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+    transition: all 0.3s ease;
+    border: 2px solid transparent;
+}
+
+.feature-card:hover {
+    border-color: var(--strava-orange);
+    transform: translateY(-5px);
+    box-shadow: 0 8px 30px rgba(252, 76, 2, 0.2);
+}
+
+.feature-card .feature-icon {
+    font-size: 3rem;
+    margin-bottom: 1rem;
+    color: var(--strava-orange);
+}
+
+.feature-card h3 {
+    color: var(--strava-dark);
+    margin-bottom: 1rem;
+    font-weight: 600;
+}
+
+.feature-card p {
+    color: var(--strava-gray);
+    line-height: 1.6;
+}
+
+/* Alert styling */
+.stAlert {
+    border-radius: 15px;
+    border: none;
+    padding: 1rem 1.5rem;
+}
+
+.stAlert[data-baseweb="notification"] {
+    background: var(--strava-light-gray);
+    border-left: 4px solid var(--strava-orange);
+}
+
+/* Progress indicators */
+.stProgress > div > div {
+    background: var(--strava-orange);
+    border-radius: 10px;
+}
+
+/* File uploader */
+.stFileUploader {
+    border: 2px dashed var(--strava-orange);
+    border-radius: 15px;
+    padding: 2rem;
+    background: var(--strava-light-gray);
+    transition: all 0.3s ease;
+}
+
+.stFileUploader:hover {
+    border-color: var(--strava-dark-orange);
+    background: rgba(252, 76, 2, 0.05);
+}
+
+/* Select box styling */
+.stSelectbox > div > div {
+    background: var(--strava-white);
+    border: 2px solid var(--strava-light-gray);
+    border-radius: 10px;
+}
+
+.stSelectbox > div > div:focus-within {
+    border-color: var(--strava-orange);
+    box-shadow: 0 0 0 3px rgba(252, 76, 2, 0.1);
+}
+
+/* Logo styling */
+.app-logo-container {
+    transition: all 0.3s ease;
+}
+
+.app-logo {
+    width: 60px;
+    height: 60px;
+    margin-right: 1rem;
+    filter: brightness(0) invert(1);
+}
+
+/* Welcome section */
+.welcome-section {
+    background: var(--strava-white);
+    border-radius: 20px;
+    padding: 3rem 2rem;
+    margin: 2rem 0;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.1);
+    text-align: center;
+}
+
+.welcome-section h2 {
+    color: var(--strava-dark);
+    font-weight: 700;
+    font-size: 2.5rem;
+    margin-bottom: 1rem;
+}
+
+.welcome-section p {
+    color: var(--strava-gray);
+    font-size: 1.2rem;
+    line-height: 1.6;
+    max-width: 600px;
+    margin: 0 auto 2rem auto;
+}
+
+/* Stats overview */
+.stats-overview {
+    background: linear-gradient(135deg, var(--strava-orange) 0%, var(--strava-dark-orange) 100%);
+    color: var(--strava-white);
+    border-radius: 20px;
+    padding: 2rem;
+    margin: 2rem 0;
+    text-align: center;
+}
+
+.stats-overview h3 {
+    margin-bottom: 1.5rem;
+    font-weight: 600;
+}
+
+.stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 1.5rem;
+}
+
+.stat-item {
+    text-align: center;
+}
+
+.stat-value {
+    font-size: 2rem;
+    font-weight: 700;
+    margin-bottom: 0.5rem;
+}
+
+.stat-label {
+    opacity: 0.9;
+    font-size: 0.9rem;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+/* Mobile responsive design */
+@media (max-width: 768px) {
+    /* Main layout adjustments */
+    .stApp {
+        font-size: 16px; /* Better base font size for mobile */
+    }
+    
+    /* Header mobile optimization */
+    .main-header {
+        padding: 1rem 1rem;
+        text-align: center;
+        border-radius: 0 0 15px 15px; /* Smaller border radius for mobile */
+    }
+    
+    .main-header h1 {
+        font-size: 2rem;
+        line-height: 1.2;
+    }
+    
+    .main-header p {
+        font-size: 1rem;
+        margin: 0.5rem 0 0 0;
+    }
+    
+    /* Logo adjustments for mobile */
+    .app-logo-container {
+        width: 60px !important;
+        height: 60px !important;
+        font-size: 1.5rem !important;
+        margin: 0.5rem auto !important;
+    }
+    
+    /* Dashboard grid mobile optimization */
+    .dashboard-grid {
+        grid-template-columns: 1fr;
+        gap: 1rem;
+        margin: 1rem 0;
+    }
+    
+    /* Feature cards mobile optimization */
+    .feature-card {
+        padding: 1.5rem 1rem;
+        margin-bottom: 1rem;
+    }
+    
+    .feature-card .feature-icon {
+        font-size: 2.5rem;
+        margin-bottom: 0.8rem;
+    }
+    
+    .feature-card h3 {
+        font-size: 1.1rem;
+        margin-bottom: 0.8rem;
+    }
+    
+    .feature-card p {
+        font-size: 0.9rem;
+        line-height: 1.5;
+    }
+    
+    /* Metric cards mobile optimization */
+    .metric-card {
+        padding: 1.5rem 1rem;
+        margin: 1rem 0;
+    }
+    
+    .metric-card .metric-value {
+        font-size: 2rem;
+    }
+    
+    .metric-card .metric-label {
+        font-size: 0.8rem;
+    }
+    
+    /* Welcome section mobile optimization */
+    .welcome-section {
+        padding: 2rem 1rem;
+        margin: 1rem 0;
+        border-radius: 15px;
+    }
+    
+    .welcome-section h2 {
+        font-size: 2rem;
+        line-height: 1.3;
+    }
+    
+    .welcome-section p {
+        font-size: 1rem;
+        line-height: 1.5;
+    }
+    
+    /* Stats grid mobile optimization */
+    .stats-grid {
+        grid-template-columns: repeat(2, 1fr); /* 2 columns on mobile */
+        gap: 1rem;
+    }
+    
+    .stat-value {
+        font-size: 1.5rem;
+    }
+    
+    .stat-label {
+        font-size: 0.8rem;
+    }
+    
+    /* Button mobile optimization */
+    .stButton > button {
+        padding: 0.8rem 1.5rem;
+        font-size: 0.9rem;
+        min-height: 44px; /* Minimum touch target size */
+        width: 100%; /* Full width buttons on mobile */
+        margin-bottom: 0.5rem;
+    }
+    
+    /* File uploader mobile optimization */
+    .stFileUploader {
+        padding: 1.5rem 1rem;
+        text-align: center;
+    }
+    
+    /* Sidebar mobile adjustments */
+    .css-1d391kg {
+        padding: 1rem 0.5rem;
+    }
+    
+    /* Form elements mobile optimization */
+    .stSelectbox > div > div,
+    .stTextInput > div > div > input,
+    .stTextArea > div > div > textarea {
+        font-size: 16px !important; /* Prevent zoom on iOS */
+        min-height: 44px; /* Better touch target */
+    }
+    
+    /* Navigation mobile optimization */
+    .nav-section {
+        padding: 0.8rem;
+        margin-bottom: 0.8rem;
+        border-radius: 10px;
+    }
+    
+    .nav-section h3 {
+        font-size: 1rem;
+        margin-bottom: 0.8rem;
+    }
+    
+    /* Map container mobile optimization */
+    div[data-testid="stVerticalBlock"] > div:has(iframe[title="streamlit_folium.st_folium"]) {
+        min-height: 300px; /* Smaller min-height for mobile */
+    }
+}
+
+/* Small mobile devices (phones in portrait) */
+@media (max-width: 480px) {
+    /* Further optimizations for very small screens */
+    .main-header {
+        padding: 0.8rem;
+    }
+    
+    .main-header h1 {
+        font-size: 1.8rem;
+    }
+    
+    .feature-card,
+    .metric-card {
+        padding: 1rem;
+    }
+    
+    .welcome-section {
+        padding: 1.5rem 0.8rem;
+    }
+    
+    .welcome-section h2 {
+        font-size: 1.8rem;
+    }
+    
+    /* Single column stats on very small screens */
+    .stats-grid {
+        grid-template-columns: 1fr;
+        gap: 0.8rem;
+    }
+    
+    /* Smaller touch targets for very constrained space */
+    .stButton > button {
+        padding: 0.7rem 1rem;
+        font-size: 0.85rem;
+        min-height: 40px;
+    }
+}
+
+/* Tablet responsive design */
+@media (min-width: 769px) and (max-width: 1024px) {
+    .dashboard-grid {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 1.5rem;
+    }
+    
+    .stats-grid {
+        grid-template-columns: repeat(3, 1fr);
+    }
+    
+    .main-header h1 {
+        font-size: 2.2rem;
+    }
+}
+
+/* Hide streamlit elements */
+#MainMenu {visibility: hidden;}
+footer {visibility: hidden;}
+header {visibility: hidden;}
+
+.stDeployButton {display: none;}
+
+/* Mobile-specific Streamlit optimizations */
+@media (max-width: 768px) {
+    /* Hide hamburger menu on mobile if sidebar is always visible */
+    .css-1rs6os.edgvbvh3 {
+        display: none;
+    }
+    
+    /* Optimize column layouts for mobile */
+    .stColumns {
+        gap: 0.5rem;
+    }
+    
+    /* Better spacing for mobile containers */
+    .stContainer > div {
+        padding: 0.5rem;
+    }
+    
+    /* Improve mobile scrolling */
+    .stApp {
+        -webkit-overflow-scrolling: touch;
+    }
+    
+    /* Better mobile sidebar behavior */
+    .css-1d391kg {
+        min-width: 250px;
+        max-width: 280px;
+    }
+}
+
+/* Touch-friendly improvements */
+@media (pointer: coarse) {
+    /* Larger touch targets for touch devices */
+    .stButton > button,
+    .stSelectbox,
+    .stToggle,
+    .stCheckbox {
+        min-height: 44px;
+    }
+    
+    /* Better spacing for touch interactions */
+    .stSelectbox {
+        margin-bottom: 0.8rem;
+    }
+    
+    /* Improve touch feedback */
+    .stButton > button:active {
+        transform: translateY(0);
+        box-shadow: 0 2px 10px rgba(252, 76, 2, 0.4);
+    }
+}
+
+/* High DPI display optimizations */
+@media (-webkit-min-device-pixel-ratio: 2), (min-resolution: 192dpi) {
+    /* Crisp text rendering on high DPI screens */
+    .main-header h1,
+    .feature-card h3,
+    .metric-card h3 {
+        text-rendering: optimizeLegibility;
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+    }
+}
