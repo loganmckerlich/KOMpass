@@ -319,9 +319,9 @@
     
     /* Logo adjustments for mobile */
     .app-logo-container {
-        width: 30px !important;
-        height: 30px !important;
-        font-size: 1rem !important;
+        width: 25px !important;
+        height: 25px !important;
+        font-size: 0.8rem !important;
         margin: 0.2rem auto !important;
     }
     
@@ -507,52 +507,6 @@ header {visibility: hidden;}
 
 /* Mobile-specific Streamlit optimizations */
 @media (max-width: 768px) {
-    /* Show hamburger menu on mobile for sidebar access - Updated selectors */
-    .css-1rs6os.edgvbvh3,
-    button[data-testid="stBaseButton-headerNoPadding"],
-    button[kind="headerNoPadding"] {
-        display: block !important;
-        visibility: visible !important;
-        position: relative !important;
-        z-index: 999 !important;
-    }
-    
-    /* Ensure sidebar hamburger button is visible and accessible */
-    button[kind="header"],
-    button[kind="headerNoPadding"] {
-        display: block !important;
-        visibility: visible !important;
-    }
-    
-    /* Style the mobile hamburger button - both close and expand buttons */
-    .stApp > header button,
-    button[data-testid="stBaseButton-headerNoPadding"],
-    button[data-testid="stExpandSidebarButton"] {
-        display: block !important;
-        visibility: visible !important;
-        opacity: 1 !important;
-        position: fixed !important;
-        top: 8px !important;
-        left: 8px !important;
-        z-index: 1000 !important;
-        width: 40px !important;
-        height: 40px !important;
-        padding: 8px !important;
-        border: 1px solid var(--strava-orange) !important;
-        border-radius: 4px !important;
-        background: rgba(252, 76, 2, 0.1) !important;
-        color: var(--strava-orange) !important;
-        font-size: 16px !important;
-        cursor: pointer !important;
-    }
-    
-    /* Additional styling for expand button to ensure it's highly visible */
-    button[data-testid="stExpandSidebarButton"] {
-        background: rgba(252, 76, 2, 0.2) !important;
-        border: 2px solid var(--strava-orange) !important;
-        box-shadow: 0 2px 8px rgba(252, 76, 2, 0.3) !important;
-    }
-    
     /* Optimize column layouts for mobile */
     .stColumns {
         gap: 0.5rem;
@@ -566,12 +520,6 @@ header {visibility: hidden;}
     /* Improve mobile scrolling */
     .stApp {
         -webkit-overflow-scrolling: touch;
-    }
-    
-    /* Better mobile sidebar behavior */
-    .css-1d391kg {
-        min-width: 250px;
-        max-width: 280px;
     }
 }
 
