@@ -1,6 +1,7 @@
 """
 UI Components for KOMpass application.
 Contains reusable UI functions and page rendering logic.
+Optimized with Streamlit caching and fragmentation for performance.
 """
 
 import streamlit as st
@@ -8,6 +9,7 @@ from typing import Dict, List, Any, Optional
 from datetime import datetime, timedelta
 import time
 from streamlit_folium import st_folium
+import hashlib
 
 from route_processor import RouteProcessor
 from weather_analyzer import WeatherAnalyzer
@@ -41,8 +43,13 @@ class UIComponents:
             st.markdown("### 🔐 Authentication")
             self.auth_manager.render_authentication_ui()
     
-    def render_readme_section(self) -> str:
-        """Render README content section."""
+    @st.cache_data(ttl=3600)  # Cache README for 1 hour
+    def render_readme_section(_self) -> str:
+        """Render README content section.
+        Cached to avoid repeated file I/O.
+        
+        Note: Uses leading underscore on self to exclude from caching key
+        """
         log_function_entry(logger, "render_readme_section")
         
         try:
@@ -139,7 +146,9 @@ class UIComponents:
         log_function_exit(logger, "render_route_upload_page")
     
     def _process_uploaded_file(self, uploaded_file):
-        """Process uploaded GPX or FIT file and render analysis."""
+        """Process uploaded GPX or FIT file and render analysis.
+        Uses session state to cache processed data and avoid reprocessing.
+        """
         log_function_entry(logger, "_process_uploaded_file", filename=uploaded_file.name)
         
         try:
@@ -149,18 +158,37 @@ class UIComponents:
                 st.error(f"❌ File too large ({file_size_mb:.1f}MB). Maximum size is {self.config.app.max_file_size_mb}MB.")
                 return
             
-            # Read file content as bytes
-            file_content = uploaded_file.getvalue()
-            st.success(f"✅ File '{uploaded_file.name}' uploaded successfully! ({file_size_mb:.1f}MB)")
+            # Create hash of file content for caching
+            file_content_bytes = uploaded_file.getvalue()
+            file_hash = hashlib.md5(file_content_bytes).hexdigest()
             
-            # Process the route
-            with st.spinner("Processing route data..."):
-                start_time = time.time()
-                route_data = self.route_processor.parse_route_file(file_content, uploaded_file.name)
-                stats = self.route_processor.calculate_route_statistics(route_data)
-                processing_time = time.time() - start_time
+            # Check if we have cached data for this file
+            cache_key = f"route_data_{file_hash}"
+            stats_key = f"route_stats_{file_hash}"
             
-            logger.info(f"Route processing completed in {processing_time:.2f}s")
+            if cache_key in st.session_state and stats_key in st.session_state:
+                # Use cached data
+                route_data = st.session_state[cache_key]
+                stats = st.session_state[stats_key]
+                st.success(f"✅ File '{uploaded_file.name}' loaded from cache! ({file_size_mb:.1f}MB)")
+                logger.info(f"Using cached data for file: {uploaded_file.name}")
+            else:
+                # Process the file
+                gpx_content = file_content_bytes.decode('utf-8')
+                st.success(f"✅ File '{uploaded_file.name}' uploaded successfully! ({file_size_mb:.1f}MB)")
+                
+                # Process the route with progress indicators
+                with st.spinner("Processing route data..."):
+                    start_time = time.time()
+                    route_data = self.route_processor.parse_route_file(file_content, uploaded_file.name)
+                    stats = self.route_processor.calculate_route_statistics(route_data)
+                    processing_time = time.time() - start_time
+                
+                # Cache the processed data in session state
+                st.session_state[cache_key] = route_data
+                st.session_state[stats_key] = stats
+                
+                logger.info(f"Route processing completed in {processing_time:.2f}s")
             
             # Render route analysis
             self._render_route_analysis(route_data, stats, uploaded_file.name)
@@ -212,8 +240,9 @@ class UIComponents:
         
         log_function_exit(logger, "_render_route_analysis")
     
+    @st.fragment  # Independent fragment for basic stats
     def _render_basic_stats(self, stats: Dict):
-        """Render basic route statistics."""
+        """Render basic route statistics as an independent fragment."""
         st.subheader("📊 Basic Route Statistics")
         
         # Get unit preference
@@ -256,8 +285,9 @@ class UIComponents:
                 else:
                     st.metric("Min Elevation", f"{stats['min_elevation_m']:.0f} {units['elevation']}")
     
+    @st.fragment  # Independent fragment for gradient analysis
     def _render_gradient_analysis(self, gradient: Dict):
-        """Render gradient analysis section."""
+        """Render gradient analysis section as an independent fragment."""
         st.subheader("⛰️ Gradient Analysis")
         
         col1, col2, col3, col4 = st.columns(4)
@@ -278,8 +308,9 @@ class UIComponents:
             st.metric("Min Gradient", f"{gradient.get('min_gradient_percent', 0)}%")
             st.metric("Gradient Std Dev", f"{gradient.get('gradient_std_dev', 0)}%")
     
+    @st.fragment  # Independent fragment for climb analysis
     def _render_climb_analysis(self, climb: Dict):
-        """Render climbing analysis section."""
+        """Render climbing analysis section as an independent fragment."""
         st.subheader("🚴‍♂️ Climbing Analysis")
         
         # Get unit preference
@@ -429,8 +460,9 @@ class UIComponents:
                 st.metric("Stop Time Penalty", f"{ml_features.get('estimated_stop_time_penalty_min', 0)} min")
             st.metric("Elevation Variation", f"{ml_features.get('elevation_variation_index', 0)} m/km")
     
+    @st.fragment  # Independent fragment for weather analysis input
     def _render_weather_analysis_section(self, route_data: Dict, stats: Dict):
-        """Render weather analysis section."""
+        """Render weather analysis section as an independent fragment."""
         st.subheader("🌤️ Weather Analysis & Planning")
         
         # Weather input controls
@@ -597,19 +629,34 @@ class UIComponents:
             if metadata.get('time'):
                 st.write(f"**Created:** {metadata['time']}")
     
+    @st.fragment  # Independent fragment for route visualization
     @log_execution_time()
     def _render_route_visualization(self, route_data: Dict, stats: Dict):
-        """Render route map visualization."""
+        """Render route map visualization as an independent fragment."""
         st.subheader("🗺️ Route Visualization")
         
-        with st.spinner("Generating map..."):
-            try:
-                route_map = self.route_processor.create_route_map(route_data, stats)
-                st_folium(route_map, height=500, use_container_width=True, key="main_route_map")
-                logger.info("Route map rendered successfully")
-            except Exception as e:
-                log_error(logger, e, "Error generating route map")
-                st.error(f"❌ Error generating map: {str(e)}")
+        # Create hash for caching the visualization
+        route_hash = hashlib.md5(str(route_data).encode()).hexdigest()
+        map_cache_key = f"route_map_{route_hash}"
+        
+        # Check if we have a cached map
+        if map_cache_key in st.session_state:
+            route_map = st.session_state[map_cache_key]
+            logger.info("Using cached route map")
+        else:
+            with st.spinner("Generating map..."):
+                try:
+                    route_map = self.route_processor.create_route_map(route_data, stats)
+                    # Cache the map in session state
+                    st.session_state[map_cache_key] = route_map
+                    logger.info("Route map generated and cached successfully")
+                except Exception as e:
+                    log_error(logger, e, "Error generating route map")
+                    st.error(f"❌ Error generating map: {str(e)}")
+                    return
+        
+        # Display the map
+        st_folium(route_map, height=500, use_container_width=True, key="main_route_map")
     
     def _render_save_route_section(self, route_data: Dict, stats: Dict):
         """Render save route section."""
@@ -627,33 +674,38 @@ class UIComponents:
                     st.error(f"❌ Error saving route: {str(e)}")
     
     def render_saved_routes_page(self):
-        """Render the saved routes page."""
+        """Render the saved routes page with cached route list."""
         log_function_entry(logger, "render_saved_routes_page")
         
         st.header("🗃️ Saved Routes")
         st.markdown("View and analyze your previously uploaded routes.")
         
-        # Load saved routes
-        try:
-            saved_routes = self.route_processor.load_saved_routes()
-            
-            if not saved_routes:
-                st.info("📭 No saved routes found. Upload some routes first!")
-                log_function_exit(logger, "render_saved_routes_page", "No saved routes")
+        # Use session state to cache saved routes list
+        if "saved_routes_list" not in st.session_state or st.button("🔄 Refresh Routes"):
+            try:
+                saved_routes = self.route_processor.load_saved_routes()
+                st.session_state["saved_routes_list"] = saved_routes
+                logger.info(f"Loaded {len(saved_routes)} saved routes")
+            except Exception as e:
+                log_error(logger, e, "Error loading saved routes")
+                st.error(f"❌ Error loading saved routes: {str(e)}")
                 return
-            
-            st.write(f"Found {len(saved_routes)} saved route(s):")
-            
-            # Display saved routes
-            for i, route_info in enumerate(saved_routes):
-                self._render_saved_route_item(route_info, i)
-            
-            logger.info(f"Displayed {len(saved_routes)} saved routes")
-            log_function_exit(logger, "render_saved_routes_page", "Success")
-            
-        except Exception as e:
-            log_error(logger, e, "Error loading saved routes")
-            st.error(f"❌ Error loading saved routes: {str(e)}")
+        else:
+            saved_routes = st.session_state["saved_routes_list"]
+        
+        if not saved_routes:
+            st.info("📭 No saved routes found. Upload some routes first!")
+            log_function_exit(logger, "render_saved_routes_page", "No saved routes")
+            return
+        
+        st.write(f"Found {len(saved_routes)} saved route(s):")
+        
+        # Display saved routes
+        for i, route_info in enumerate(saved_routes):
+            self._render_saved_route_item(route_info, i)
+        
+        logger.info(f"Displayed {len(saved_routes)} saved routes")
+        log_function_exit(logger, "render_saved_routes_page", "Success")
     
     def _render_saved_route_item(self, route_info: Dict, index: int):
         """Render a single saved route item."""

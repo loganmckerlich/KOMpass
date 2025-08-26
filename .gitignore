@@ -61,6 +61,9 @@ saved_routes/
 *.tmp
 *.log
 
+# Test files
+test_cache_performance.py
+
 # Backup files
 main_old.py
 
