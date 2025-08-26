@@ -253,3 +253,96 @@ class StravaOAuth:
             raise Exception(f"Failed to get activity zones: {response.status_code} - {response.text}")
         
         return response.json()
+    
+    def get_activity_streams(self, access_token: str, activity_id: str, keys: str = "time,watts,heartrate,cadence,velocity_smooth") -> Dict:
+        """
+        Get detailed activity streams for power curve analysis and advanced metrics.
+        
+        Args:
+            access_token: Valid Strava access token
+            activity_id: Strava activity ID
+            keys: Comma-separated list of stream types to fetch
+            
+        Returns:
+            Dictionary containing detailed activity streams
+        """
+        headers = {
+            "Authorization": f"Bearer {access_token}"
+        }
+        
+        params = {
+            "keys": keys,
+            "key_by_type": "true"
+        }
+        
+        response = requests.get(f"{self.api_base_url}/activities/{activity_id}/streams", headers=headers, params=params)
+        
+        if response.status_code == 401:
+            raise Exception("Access token is invalid or expired")
+        elif response.status_code == 404:
+            raise Exception(f"Activity {activity_id} not found or no streams data available")
+        elif response.status_code != 200:
+            raise Exception(f"Failed to get activity streams: {response.status_code} - {response.text}")
+        
+        return response.json()
+    
+    def get_activity_detailed(self, access_token: str, activity_id: str, include_all_efforts: bool = True) -> Dict:
+        """
+        Get detailed activity information including segment efforts and advanced metrics.
+        
+        Args:
+            access_token: Valid Strava access token
+            activity_id: Strava activity ID
+            include_all_efforts: Include all segment efforts and laps
+            
+        Returns:
+            Dictionary containing detailed activity information
+        """
+        headers = {
+            "Authorization": f"Bearer {access_token}"
+        }
+        
+        params = {
+            "include_all_efforts": str(include_all_efforts).lower()
+        }
+        
+        response = requests.get(f"{self.api_base_url}/activities/{activity_id}", headers=headers, params=params)
+        
+        if response.status_code == 401:
+            raise Exception("Access token is invalid or expired")
+        elif response.status_code == 404:
+            raise Exception(f"Activity {activity_id} not found")
+        elif response.status_code != 200:
+            raise Exception(f"Failed to get detailed activity: {response.status_code} - {response.text}")
+        
+        return response.json()
+    
+    def get_athlete_koms(self, access_token: str, page: int = 1, per_page: int = 30) -> Dict:
+        """
+        Get athlete's KOM/QOM achievements for performance analysis.
+        
+        Args:
+            access_token: Valid Strava access token
+            page: Page number for pagination
+            per_page: Number of KOMs per page
+            
+        Returns:
+            List of KOM/QOM achievements
+        """
+        headers = {
+            "Authorization": f"Bearer {access_token}"
+        }
+        
+        params = {
+            "page": page,
+            "per_page": min(per_page, 200)
+        }
+        
+        response = requests.get(f"{self.api_base_url}/athlete/koms", headers=headers, params=params)
+        
+        if response.status_code == 401:
+            raise Exception("Access token is invalid or expired")
+        elif response.status_code != 200:
+            raise Exception(f"Failed to get athlete KOMs: {response.status_code} - {response.text}")
+        
+        return response.json()
