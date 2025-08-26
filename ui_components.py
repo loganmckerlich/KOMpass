@@ -14,6 +14,7 @@ from weather_analyzer import WeatherAnalyzer
 from auth_manager import get_auth_manager
 from config import get_config
 from logging_config import get_logger, log_function_entry, log_function_exit, log_error, log_execution_time
+from units import UnitConverter
 
 logger = get_logger(__name__)
 
@@ -70,7 +71,18 @@ class UIComponents:
         selected_display = st.sidebar.selectbox("Choose a page", list(page_options.keys()))
         selected_page = page_options[selected_display]
         
-        logger.debug(f"User selected page: {selected_page}")
+        # Add unit toggle in sidebar
+        st.sidebar.markdown("### ⚖️ Units")
+        use_imperial = st.sidebar.checkbox(
+            "Use Imperial Units (mi/ft)", 
+            key="use_imperial_units",
+            help="Toggle between metric (km/m) and imperial (mi/ft) units"
+        )
+        
+        # Store unit preference in session state
+        st.session_state.use_imperial = use_imperial
+        
+        logger.debug(f"User selected page: {selected_page}, Imperial units: {use_imperial}")
         return selected_page
     
     def render_home_page(self):
@@ -110,24 +122,24 @@ class UIComponents:
         log_function_entry(logger, "render_route_upload_page")
         
         st.header("📁 Upload Route File")
-        st.markdown("Upload GPX files from ride tracking apps like RideWithGPS, Strava, Garmin Connect, etc.")
+        st.markdown("Upload GPX or FIT files from ride tracking apps like RideWithGPS, Strava, Garmin Connect, etc.")
         
-        # File upload widget
+        # File upload widget - update supported types
         uploaded_file = st.file_uploader(
-            "Choose a GPX file",
-            type=self.config.app.supported_file_types,
-            help=f"Upload a GPX file containing your route data (max {self.config.app.max_file_size_mb}MB)"
+            "Choose a GPX or FIT file",
+            type=['gpx', 'fit'],
+            help=f"Upload a GPX or FIT file containing your route data (max {self.config.app.max_file_size_mb}MB)"
         )
         
         if uploaded_file is not None:
             self._process_uploaded_file(uploaded_file)
         else:
-            st.info("📂 Select a GPX file above to begin route analysis.")
+            st.info("📂 Select a GPX or FIT file above to begin route analysis.")
         
         log_function_exit(logger, "render_route_upload_page")
     
     def _process_uploaded_file(self, uploaded_file):
-        """Process uploaded GPX file and render analysis."""
+        """Process uploaded GPX or FIT file and render analysis."""
         log_function_entry(logger, "_process_uploaded_file", filename=uploaded_file.name)
         
         try:
@@ -137,14 +149,14 @@ class UIComponents:
                 st.error(f"❌ File too large ({file_size_mb:.1f}MB). Maximum size is {self.config.app.max_file_size_mb}MB.")
                 return
             
-            # Read file content
-            gpx_content = uploaded_file.read().decode('utf-8')
+            # Read file content as bytes
+            file_content = uploaded_file.getvalue()
             st.success(f"✅ File '{uploaded_file.name}' uploaded successfully! ({file_size_mb:.1f}MB)")
             
             # Process the route
             with st.spinner("Processing route data..."):
                 start_time = time.time()
-                route_data = self.route_processor.parse_gpx_file(gpx_content)
+                route_data = self.route_processor.parse_route_file(file_content, uploaded_file.name)
                 stats = self.route_processor.calculate_route_statistics(route_data)
                 processing_time = time.time() - start_time
             
@@ -158,7 +170,7 @@ class UIComponents:
         except Exception as e:
             log_error(logger, e, f"Error processing file: {uploaded_file.name}")
             st.error(f"❌ Error processing file: {str(e)}")
-            st.info("Please ensure you've uploaded a valid GPX file.")
+            st.info("Please ensure you've uploaded a valid GPX or FIT file.")
     
     def _render_route_analysis(self, route_data: Dict, stats: Dict, filename: str):
         """Render comprehensive route analysis."""
@@ -204,23 +216,45 @@ class UIComponents:
         """Render basic route statistics."""
         st.subheader("📊 Basic Route Statistics")
         
+        # Get unit preference
+        use_imperial = getattr(st.session_state, 'use_imperial', False)
+        
+        # Convert stats if needed
+        converted_stats = UnitConverter.convert_route_stats(stats, use_imperial)
+        units = converted_stats.get('_units', {'distance': 'km', 'elevation': 'm'})
+        
         col1, col2, col3 = st.columns(3)
         
         with col1:
-            st.metric("Distance", f"{stats['total_distance_km']} km")
+            if use_imperial and 'total_distance_mi' in converted_stats:
+                st.metric("Distance", f"{converted_stats['total_distance_mi']:.2f} {units['distance']}")
+            else:
+                st.metric("Distance", f"{stats['total_distance_km']:.2f} {units['distance']}")
             st.metric("Total Points", stats['total_points'])
         
         with col2:
             if stats['total_elevation_gain_m'] > 0:
-                st.metric("Elevation Gain", f"{stats['total_elevation_gain_m']} m")
+                if use_imperial and 'total_elevation_gain_ft' in converted_stats:
+                    st.metric("Elevation Gain", f"{converted_stats['total_elevation_gain_ft']:.0f} {units['elevation']}")
+                else:
+                    st.metric("Elevation Gain", f"{stats['total_elevation_gain_m']:.0f} {units['elevation']}")
             if stats['max_elevation_m'] is not None:
-                st.metric("Max Elevation", f"{stats['max_elevation_m']:.1f} m")
+                if use_imperial and 'max_elevation_ft' in converted_stats:
+                    st.metric("Max Elevation", f"{converted_stats['max_elevation_ft']:.0f} {units['elevation']}")
+                else:
+                    st.metric("Max Elevation", f"{stats['max_elevation_m']:.0f} {units['elevation']}")
         
         with col3:
             if stats['total_elevation_loss_m'] > 0:
-                st.metric("Elevation Loss", f"{stats['total_elevation_loss_m']} m")
+                if use_imperial and 'total_elevation_loss_ft' in converted_stats:
+                    st.metric("Elevation Loss", f"{converted_stats['total_elevation_loss_ft']:.0f} {units['elevation']}")
+                else:
+                    st.metric("Elevation Loss", f"{stats['total_elevation_loss_m']:.0f} {units['elevation']}")
             if stats['min_elevation_m'] is not None:
-                st.metric("Min Elevation", f"{stats['min_elevation_m']:.1f} m")
+                if use_imperial and 'min_elevation_ft' in converted_stats:
+                    st.metric("Min Elevation", f"{converted_stats['min_elevation_ft']:.0f} {units['elevation']}")
+                else:
+                    st.metric("Min Elevation", f"{stats['min_elevation_m']:.0f} {units['elevation']}")
     
     def _render_gradient_analysis(self, gradient: Dict):
         """Render gradient analysis section."""
