@@ -6,7 +6,7 @@ import os
 import requests
 import urllib.parse
 from typing import Dict, Optional
-from logging_config import get_logger
+from ..config.logging_config import get_logger
 
 logger = get_logger(__name__)
 

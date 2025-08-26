@@ -6,9 +6,9 @@ Handles OAuth flow, token management, and user session state.
 import os
 import streamlit as st
 from typing import Dict, Optional, Any
-from strava_oauth import StravaOAuth
-from config import get_config
-from logging_config import get_logger, log_function_entry, log_function_exit, log_error
+from .strava_oauth import StravaOAuth
+from ..config.config import get_config
+from ..config.logging_config import get_logger, log_function_entry, log_function_exit, log_error
 
 logger = get_logger(__name__)
 
