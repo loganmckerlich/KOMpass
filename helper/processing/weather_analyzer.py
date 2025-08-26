@@ -381,7 +381,7 @@ class WeatherAnalyzer:
             }
     
     @st.cache_data(ttl=1800)  # Cache comprehensive analysis for 30 minutes
-    def get_comprehensive_weather_analysis(_self, route_points: List[Dict],
+    def get_comprehensive_weather_analysis(_self, route_points_hash: str, route_points: List[Dict],
                                          start_time: datetime,
                                          estimated_duration_hours: float = 2.0) -> Dict:
         """
@@ -389,6 +389,7 @@ class WeatherAnalyzer:
         Cached to reduce API calls and processing time.
         
         Args:
+            route_points_hash: Hash of route points for caching
             route_points: List of route points
             start_time: Planned departure time
             estimated_duration_hours: Estimated ride duration

@@ -161,8 +161,9 @@ class UIComponents:
             log_error(logger, e, "Error reading README.md")
             return f"Error reading README.md: {e}"
     
+    @st.fragment  # Independent fragment for navigation sidebar
     def render_navigation_sidebar(self) -> str:
-        """Render streamlined navigation sidebar."""
+        """Render streamlined navigation sidebar as an independent fragment."""
         st.sidebar.markdown("### 🧭 Navigate")
         
         page_options = {
@@ -353,10 +354,14 @@ class UIComponents:
                 # Process the route with progress indicators
                 with st.spinner("Processing route data..."):
                     start_time = time.time()
-                    route_data = self.route_processor.parse_route_file(file_content_bytes, uploaded_file.name)
+                    # Create hash for caching
+                    file_content_hash = hashlib.md5(file_content_bytes).hexdigest()
+                    route_data = self.route_processor.parse_route_file(file_content_hash, file_content_bytes, uploaded_file.name)
                     
                     # Calculate statistics with all advanced analysis enabled
+                    route_data_hash = hashlib.md5(str(route_data).encode()).hexdigest()
                     stats = self.route_processor.calculate_route_statistics(
+                        route_data_hash,
                         route_data, 
                         include_traffic_analysis=False  # Traffic analysis remains optional for performance
                     )
@@ -531,7 +536,9 @@ class UIComponents:
                 # Calculate route statistics using the same processor as uploaded files
                 with st.spinner("Processing route data..."):
                     start_time = time.time()
+                    route_data_hash = hashlib.md5(str(route_data).encode()).hexdigest()
                     stats = self.route_processor.calculate_route_statistics(
+                        route_data_hash,
                         route_data, 
                         include_traffic_analysis=False  # Traffic analysis remains optional for performance
                     )
@@ -697,7 +704,8 @@ class UIComponents:
         
         # Automatically generate and cache comprehensive dataframe for ML use
         try:
-            df = self.route_processor.create_analysis_dataframe(route_data, stats)
+            route_data_hash = hashlib.md5(str(route_data).encode()).hexdigest()
+            df = self.route_processor.create_analysis_dataframe(route_data_hash, route_data, stats)
             if not df.empty:
                 # Cache the dataframe for ML use
                 route_name = route_data.get('metadata', {}).get('name', filename)
@@ -779,7 +787,9 @@ class UIComponents:
         with st.spinner("Analyzing traffic stops... This may take 10-30 seconds."):
             try:
                 # Re-calculate with traffic analysis enabled
+                route_data_hash = hashlib.md5(str(route_data).encode()).hexdigest()
                 full_stats = self.route_processor.calculate_route_statistics(
+                    route_data_hash,
                     route_data, 
                     include_traffic_analysis=True
                 )
@@ -805,7 +815,8 @@ class UIComponents:
         with st.spinner("Creating detailed analysis dataframe..."):
             try:
                 # Create the dataframe
-                df = self.route_processor.create_analysis_dataframe(route_data, stats)
+                route_data_hash = hashlib.md5(str(route_data).encode()).hexdigest()
+                df = self.route_processor.create_analysis_dataframe(route_data_hash, route_data, stats)
                 
                 if not df.empty:
                     # Cache the dataframe for ML use
@@ -958,8 +969,9 @@ class UIComponents:
             st.metric("Max Climb Gradient", f"{climb.get('max_climb_gradient', 0)}%")
             st.metric("Climb Difficulty Score", f"{climb.get('climb_difficulty_score', 0)}")
     
+    @st.fragment  # Independent fragment for complexity analysis
     def _render_complexity_analysis(self, complexity: Dict, ml_features: Dict):
-        """Render route complexity analysis."""
+        """Render route complexity analysis as an independent fragment."""
         st.subheader("🛣️ Route Complexity")
         
         col1, col2, col3 = st.columns(3)
@@ -1111,8 +1123,9 @@ class UIComponents:
             - Scale: 0-1 (higher = more challenging)
             """)
     
+    @st.fragment  # Independent fragment for terrain analysis
     def _render_terrain_analysis(self, terrain: Dict, power: Dict):
-        """Render terrain analysis without power assumptions."""
+        """Render terrain analysis without power assumptions as an independent fragment."""
         st.subheader("🏔️ Terrain Classification")
         
         col1, col2, col3 = st.columns(3)
@@ -1129,8 +1142,9 @@ class UIComponents:
             st.metric("Moderate Climbs", f"{terrain_dist.get('moderate_climbs_percent', 0):.1f}%")
             st.metric("Steep Climbs", f"{terrain_dist.get('steep_climbs_percent', 0):.1f}%")
     
+    @st.fragment  # Independent fragment for traffic analysis
     def _render_traffic_analysis(self, traffic: Dict):
-        """Render traffic stop analysis."""
+        """Render traffic stop analysis as an independent fragment."""
         st.subheader("🚦 Traffic Stop Analysis")
         
         if traffic.get('analysis_available'):
@@ -1249,8 +1263,9 @@ class UIComponents:
                     return
                 
                 # Get comprehensive weather analysis
+                route_points_hash = hashlib.md5(str([(p['lat'], p['lon']) for p in all_points]).encode()).hexdigest()
                 weather_analysis = self.weather_analyzer.get_comprehensive_weather_analysis(
-                    all_points, departure_datetime, 2.0  # Default 2-hour duration estimate
+                    route_points_hash, all_points, departure_datetime, 2.0  # Default 2-hour duration estimate
                 )
                 
                 if weather_analysis.get('analysis_available'):
@@ -1353,8 +1368,9 @@ class UIComponents:
             st.write(f"• Average temperature: {temp_data.get('avg_temperature_c', 0)}°C")
             st.write(f"• Temperature variation: {temp_data.get('temperature_range_c', 0)}°C")
     
+    @st.fragment  # Independent fragment for route metadata
     def _render_route_metadata(self, route_data: Dict):
-        """Render route metadata section."""
+        """Render route metadata section as an independent fragment."""
         if route_data.get('metadata'):
             st.subheader("📋 Route Information")
             metadata = route_data['metadata']
@@ -1383,7 +1399,8 @@ class UIComponents:
         else:
             with st.spinner("Generating map..."):
                 try:
-                    route_map = self.route_processor.create_route_map(route_data, stats)
+                    route_data_hash = hashlib.md5(str(route_data).encode()).hexdigest()
+                    route_map = self.route_processor.create_route_map(route_data_hash, route_data, stats)
                     # Cache the map in session state
                     st.session_state[map_cache_key] = route_map
                     logger.info("Route map generated and cached successfully")
@@ -1428,8 +1445,9 @@ class UIComponents:
         # Display the map
         st_folium(route_map, height=500, use_container_width=True, key="main_route_map")
     
+    @st.fragment  # Independent fragment for save route section
     def _render_save_route_section(self, route_data: Dict, stats: Dict):
-        """Render save route section."""
+        """Render save route section as an independent fragment."""
         st.subheader("💾 Save Route")
         
         if st.button("Save Route for Future Analysis"):
@@ -1563,7 +1581,8 @@ class UIComponents:
                     # Create and display map
                     st.subheader(f"🗺️ {route_info['name']}")
                     with st.spinner("Loading map..."):
-                        route_map = self.route_processor.create_route_map(route_data, stats)
+                        route_data_hash = hashlib.md5(str(route_data).encode()).hexdigest()
+                        route_map = self.route_processor.create_route_map(route_data_hash, route_data, stats)
                         
                         # Add custom CSS to prevent map flickering
                         st.markdown("""
@@ -1607,13 +1626,11 @@ class UIComponents:
                     st.error(f"Error loading route: {str(e)}")
 
 
-# Global UI components instance
-ui_components = UIComponents()
-
-
+# Global UI components instance cached as resource
+@st.cache_resource  # Cache UI components instance as they are expensive to initialize
 def get_ui_components() -> UIComponents:
     """Get the global UI components instance."""
-    return ui_components
+    return UIComponents()
 
 
 if __name__ == "__main__":
