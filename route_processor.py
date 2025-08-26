@@ -1,6 +1,7 @@
 """
 Route processing module for KOMpass.
 Handles GPX file parsing, route analysis, and data persistence.
+Optimized with Streamlit caching for performance.
 """
 
 import gpxpy
@@ -14,11 +15,15 @@ from math import radians, cos, sin, asin, sqrt, atan2, degrees
 import numpy as np
 import requests
 import time
+import streamlit as st
+import hashlib
 
 
+@st.cache_data(ttl=3600)  # Cache for 1 hour
 def haversine_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     """
     Calculate the great circle distance between two points on earth in kilometers.
+    Cached for performance as this is called frequently.
     """
     # Convert decimal degrees to radians
     lat1, lon1, lat2, lon2 = map(radians, [lat1, lon1, lat2, lon2])
@@ -34,9 +39,11 @@ def haversine_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> fl
     return c * r
 
 
+@st.cache_data(ttl=3600)  # Cache for 1 hour
 def calculate_bearing(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     """
     Calculate the bearing between two points in degrees.
+    Cached for performance.
     """
     lat1, lon1, lat2, lon2 = map(radians, [lat1, lon1, lat2, lon2])
     
@@ -51,9 +58,11 @@ def calculate_bearing(lat1: float, lon1: float, lat2: float, lon2: float) -> flo
     return bearing
 
 
+@st.cache_data(ttl=3600)  # Cache for 1 hour
 def calculate_gradient(distance_m: float, elevation_change_m: float) -> float:
     """
     Calculate gradient as a percentage.
+    Cached for performance.
     """
     if distance_m == 0:
         return 0
@@ -357,13 +366,18 @@ class RouteProcessor:
             'note': 'Power calculations use standardized reference speeds for ML feature consistency'
         }
     
-    def _query_overpass_api(self, query: str, max_retries: int = 3) -> Dict:
-        """Query the Overpass API with rate limiting and error handling."""
+    @st.cache_data(ttl=1800)  # Cache API responses for 30 minutes
+    def _query_overpass_api(_self, query: str, max_retries: int = 3) -> Dict:
+        """Query the Overpass API with rate limiting and error handling.
+        Cached to reduce API calls.
+        
+        Note: Uses leading underscore on self to exclude from caching key
+        """
         for attempt in range(max_retries):
             try:
-                time.sleep(self.request_delay)  # Rate limiting
+                time.sleep(_self.request_delay)  # Rate limiting
                 response = requests.post(
-                    self.overpass_url,
+                    _self.overpass_url,
                     data=query,
                     headers={'Content-Type': 'text/plain; charset=utf-8'},
                     timeout=30
@@ -377,8 +391,13 @@ class RouteProcessor:
                 time.sleep(2 ** attempt)  # Exponential backoff
         return {'elements': []}
     
-    def _get_traffic_infrastructure(self, bounds: Dict, route_points: List[Dict]) -> Dict:
-        """Query OpenStreetMap for traffic lights and major roads near the route."""
+    @st.cache_data(ttl=1800)  # Cache traffic data for 30 minutes
+    def _get_traffic_infrastructure(_self, bounds: Dict, route_points: List[Dict]) -> Dict:
+        """Query OpenStreetMap for traffic lights and major roads near the route.
+        Cached to reduce API calls.
+        
+        Note: Uses leading underscore on self to exclude from caching key
+        """
         if not bounds:
             return {'traffic_lights': [], 'major_roads': []}
         
@@ -401,7 +420,7 @@ class RouteProcessor:
         out geom;
         """
         
-        traffic_lights_data = self._query_overpass_api(traffic_light_query)
+        traffic_lights_data = _self._query_overpass_api(traffic_light_query)
         traffic_lights = []
         
         for element in traffic_lights_data.get('elements', []):
@@ -421,7 +440,7 @@ class RouteProcessor:
         out geom;
         """
         
-        major_roads_data = self._query_overpass_api(major_roads_query)
+        major_roads_data = _self._query_overpass_api(major_roads_query)
         major_roads = []
         
         for element in major_roads_data.get('elements', []):
@@ -631,7 +650,8 @@ class RouteProcessor:
         if not os.path.exists(self.data_dir):
             os.makedirs(self.data_dir)
     
-    def parse_gpx_file(self, gpx_content: str) -> Dict:
+    @st.cache_data(ttl=3600)  # Cache parsed GPX data for 1 hour
+    def parse_gpx_file(_self, gpx_content: str) -> Dict:
         """Parse GPX file content and extract route data.
         
         Args:
@@ -639,6 +659,8 @@ class RouteProcessor:
             
         Returns:
             Dictionary containing parsed route data
+            
+        Note: Uses leading underscore on self to exclude from caching key
         """
         try:
             gpx = gpxpy.parse(gpx_content)
@@ -713,7 +735,8 @@ class RouteProcessor:
         except Exception as e:
             raise ValueError(f"Error parsing GPX file: {str(e)}")
     
-    def calculate_route_statistics(self, route_data: Dict) -> Dict:
+    @st.cache_data(ttl=3600)  # Cache route statistics for 1 hour
+    def calculate_route_statistics(_self, route_data: Dict) -> Dict:
         """Calculate comprehensive statistics for the route including ML-ready features.
         
         Args:
@@ -721,6 +744,8 @@ class RouteProcessor:
             
         Returns:
             Dictionary containing route statistics and advanced metrics
+            
+        Note: Uses leading underscore on self to exclude from caching key
         """
         stats = {
             'total_distance_km': 0,
@@ -790,27 +815,27 @@ class RouteProcessor:
         # Advanced ML-ready metrics
         if len(all_points) >= 2:
             # Gradient analysis
-            gradient_analysis = self._analyze_gradients(all_points)
+            gradient_analysis = _self._analyze_gradients(all_points)
             stats['gradient_analysis'] = gradient_analysis
             
             # Climbing analysis
-            climb_analysis = self._analyze_climbs(all_points)
+            climb_analysis = _self._analyze_climbs(all_points)
             stats['climb_analysis'] = climb_analysis
             
             # Route complexity analysis
-            complexity_analysis = self._analyze_route_complexity(all_points)
+            complexity_analysis = _self._analyze_route_complexity(all_points)
             stats['complexity_analysis'] = complexity_analysis
             
             # Terrain classification for ML features
-            terrain_analysis = self._classify_terrain_type(gradient_analysis)
+            terrain_analysis = _self._classify_terrain_type(gradient_analysis)
             stats['terrain_analysis'] = terrain_analysis
             
             # Power requirements analysis for ML features
-            power_analysis = self._estimate_power_requirements(gradient_analysis, total_distance)
+            power_analysis = _self._estimate_power_requirements(gradient_analysis, total_distance)
             stats['power_analysis'] = power_analysis
             
             # Traffic stop analysis
-            traffic_analysis = self._analyze_traffic_stops(all_points, stats)
+            traffic_analysis = _self._analyze_traffic_stops(all_points, stats)
             stats['traffic_analysis'] = traffic_analysis
             
             # Additional derived metrics for ML
@@ -843,7 +868,8 @@ class RouteProcessor:
         
         return stats
     
-    def create_route_map(self, route_data: Dict, stats: Dict) -> folium.Map:
+    @st.cache_resource(ttl=3600)  # Cache maps for 1 hour
+    def create_route_map(_self, route_data: Dict, stats: Dict) -> folium.Map:
         """Create a folium map visualization of the route.
         
         Args:
@@ -852,6 +878,8 @@ class RouteProcessor:
             
         Returns:
             Folium map object
+            
+        Note: Uses leading underscore on self to exclude from caching key
         """
         # Determine map center
         if stats['bounds']:

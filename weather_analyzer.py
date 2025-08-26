@@ -1,6 +1,7 @@
 """
 Weather analysis module for KOMpass.
 Provides weather forecasting and analysis for cycling routes.
+Optimized with Streamlit caching for performance.
 """
 
 import requests
@@ -9,6 +10,7 @@ from datetime import datetime, timedelta
 from typing import Dict, List, Tuple, Optional
 import math
 from math import radians, cos, sin, atan2, degrees
+import streamlit as st
 
 
 class WeatherAnalyzer:
@@ -20,10 +22,12 @@ class WeatherAnalyzer:
         self.base_url = "https://api.open-meteo.com/v1/forecast"
         self.request_timeout = 10
     
-    def get_weather_forecast(self, lat: float, lon: float, 
+    @st.cache_data(ttl=1800)  # Cache weather data for 30 minutes
+    def get_weather_forecast(_self, lat: float, lon: float, 
                            start_time: datetime, duration_hours: float) -> Dict:
         """
         Get weather forecast for a specific location and time period.
+        Cached to reduce API calls.
         
         Args:
             lat: Latitude
@@ -33,6 +37,8 @@ class WeatherAnalyzer:
             
         Returns:
             Weather forecast data
+            
+        Note: Uses leading underscore on self to exclude from caching key
         """
         try:
             # Calculate end time
@@ -64,9 +70,9 @@ class WeatherAnalyzer:
             }
             
             response = requests.get(
-                self.base_url,
+                _self.base_url,
                 params=params,
-                timeout=self.request_timeout
+                timeout=_self.request_timeout
             )
             response.raise_for_status()
             
@@ -374,11 +380,13 @@ class WeatherAnalyzer:
                 'reason': f'Temperature analysis error: {str(e)}'
             }
     
-    def get_comprehensive_weather_analysis(self, route_points: List[Dict],
+    @st.cache_data(ttl=1800)  # Cache comprehensive analysis for 30 minutes
+    def get_comprehensive_weather_analysis(_self, route_points: List[Dict],
                                          start_time: datetime,
                                          estimated_duration_hours: float = 2.0) -> Dict:
         """
         Get comprehensive weather analysis for the entire route.
+        Cached to reduce API calls and processing time.
         
         Args:
             route_points: List of route points
@@ -387,12 +395,14 @@ class WeatherAnalyzer:
             
         Returns:
             Complete weather analysis
+            
+        Note: Uses leading underscore on self to exclude from caching key
         """
         if not route_points:
             return {'analysis_available': False, 'reason': 'No route data'}
         
         # Calculate timing along route
-        timed_points = self.calculate_route_timing(route_points, start_time, estimated_duration_hours)
+        timed_points = _self.calculate_route_timing(route_points, start_time, estimated_duration_hours)
         
         if not timed_points:
             return {'analysis_available': False, 'reason': 'Unable to calculate route timing'}
@@ -402,7 +412,7 @@ class WeatherAnalyzer:
         center_lon = sum(p['lon'] for p in route_points) / len(route_points)
         
         # Get weather forecast
-        weather_data = self.get_weather_forecast(
+        weather_data = _self.get_weather_forecast(
             center_lat, center_lon, start_time, estimated_duration_hours + 1
         )
         
@@ -413,12 +423,12 @@ class WeatherAnalyzer:
             }
         
         # Perform individual analyses
-        wind_analysis = self.analyze_wind_conditions(timed_points, weather_data, start_time)
-        rain_analysis = self.analyze_precipitation(timed_points, weather_data, start_time)
-        temp_analysis = self.analyze_temperature_conditions(timed_points, weather_data, start_time)
+        wind_analysis = _self.analyze_wind_conditions(timed_points, weather_data, start_time)
+        rain_analysis = _self.analyze_precipitation(timed_points, weather_data, start_time)
+        temp_analysis = _self.analyze_temperature_conditions(timed_points, weather_data, start_time)
         
         # Generate weather recommendations
-        recommendations = self._generate_weather_recommendations(
+        recommendations = _self._generate_weather_recommendations(
             wind_analysis, rain_analysis, temp_analysis
         )
         
