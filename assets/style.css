@@ -526,7 +526,8 @@ header {visibility: hidden;}
     
     /* Style the mobile hamburger button */
     .stApp > header button,
-    button[data-testid="stBaseButton-headerNoPadding"] {
+    button[data-testid="stBaseButton-headerNoPadding"],
+    button[data-testid="stExpandSidebarButton"] {
         background: transparent !important;
         border: none !important;
         color: var(--strava-dark) !important;
@@ -537,6 +538,15 @@ header {visibility: hidden;}
         z-index: 1000 !important;
         padding: 0.5rem !important;
         border-radius: 4px !important;
+        width: auto !important;
+        height: auto !important;
+    }
+    
+    /* Ensure expand button is properly positioned when sidebar is closed */
+    button[data-testid="stExpandSidebarButton"] {
+        left: 1rem !important;
+        background: rgba(252, 76, 2, 0.1) !important;
+        border: 1px solid var(--strava-orange) !important;
     }
     
     /* Optimize column layouts for mobile */
