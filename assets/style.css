@@ -319,10 +319,10 @@
     
     /* Logo adjustments for mobile */
     .app-logo-container {
-        width: 60px !important;
-        height: 60px !important;
-        font-size: 1.5rem !important;
-        margin: 0.5rem auto !important;
+        width: 40px !important;
+        height: 40px !important;
+        font-size: 1.2rem !important;
+        margin: 0.3rem auto !important;
     }
     
     /* Dashboard grid mobile optimization */
@@ -507,9 +507,22 @@ header {visibility: hidden;}
 
 /* Mobile-specific Streamlit optimizations */
 @media (max-width: 768px) {
-    /* Hide hamburger menu on mobile if sidebar is always visible */
+    /* Show hamburger menu on mobile for sidebar access */
     .css-1rs6os.edgvbvh3 {
-        display: none;
+        display: block !important;
+    }
+    
+    /* Ensure sidebar hamburger button is visible and accessible */
+    button[kind="header"] {
+        display: block !important;
+    }
+    
+    /* Style the mobile hamburger button */
+    .stApp > header button {
+        background: transparent !important;
+        border: none !important;
+        color: var(--strava-dark) !important;
+        font-size: 1.5rem !important;
     }
     
     /* Optimize column layouts for mobile */

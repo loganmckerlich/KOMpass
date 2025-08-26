@@ -46,22 +46,22 @@ class UIComponents:
             try:
                 st.image(
                     "IMG_1855.png",
-                    width=80,
+                    width=50,  # Reduced from 80 for better mobile experience
                     use_column_width=False
                 )
             except FileNotFoundError:
                 # Fallback to CSS-generated logo if image file not found
                 st.markdown("""
                 <div class="app-logo-container" style="
-                    width: 80px; 
-                    height: 80px; 
+                    width: 50px; 
+                    height: 50px; 
                     background: linear-gradient(45deg, #FC4C02, #FF6B35);
                     border-radius: 50%;
                     display: flex;
                     align-items: center;
                     justify-content: center;
                     color: white;
-                    font-size: 2rem;
+                    font-size: 1.5rem;
                     font-weight: bold;
                     margin: 1rem auto;
                     box-shadow: 0 4px 15px rgba(252, 76, 2, 0.3);
