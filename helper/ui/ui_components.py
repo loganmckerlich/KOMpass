@@ -34,14 +34,74 @@ class UIComponents:
         log_function_exit(logger, "__init__")
     
     def render_app_header(self):
-        """Render the main application header."""
-        st.title("KOMpass - Route Analysis & Planning")
-        st.markdown("*Analyze cycling routes with advanced metrics, weather forecasting, and performance insights.*")
+        """Render the main application header with Strava-inspired styling."""
+        # Load custom CSS
+        self._load_custom_css()
         
-        # Show authentication status in sidebar
+        # Create header with logo and title
+        header_col1, header_col2 = st.columns([1, 4])
+        
+        with header_col1:
+            # Logo placeholder - will be replaced when logo is available
+            st.markdown("""
+            <div style="
+                width: 80px; 
+                height: 80px; 
+                background: linear-gradient(45deg, #FC4C02, #FF6B35);
+                border-radius: 50%;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                color: white;
+                font-size: 2rem;
+                font-weight: bold;
+                margin: 1rem 0;
+            ">
+                🧭
+            </div>
+            """, unsafe_allow_html=True)
+        
+        with header_col2:
+            st.markdown("""
+            <div class="main-header">
+                <h1>KOMpass</h1>
+                <p>Your intelligent cycling route analysis companion</p>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        # Minimal authentication in sidebar
         with st.sidebar:
-            st.markdown("### 🔐 Authentication")
+            st.markdown("### 🔐 Auth")
             self.auth_manager.render_authentication_ui()
+    
+    def _load_custom_css(self):
+        """Load custom CSS for Strava-inspired styling."""
+        try:
+            with open("assets/style.css", "r") as f:
+                css = f.read()
+            st.markdown(f"<style>{css}</style>", unsafe_allow_html=True)
+        except FileNotFoundError:
+            # Fallback inline CSS if file not found
+            st.markdown("""
+            <style>
+            :root {
+                --strava-orange: #FC4C02;
+                --strava-dark: #2D2D2D;
+                --strava-white: #FFFFFF;
+            }
+            .stApp { font-family: 'Inter', sans-serif; }
+            .main-header {
+                background: linear-gradient(90deg, var(--strava-orange) 0%, #E34D00 100%);
+                color: var(--strava-white);
+                padding: 1.5rem 2rem;
+                border-radius: 0 0 20px 20px;
+                margin-bottom: 2rem;
+                box-shadow: 0 4px 20px rgba(252, 76, 2, 0.3);
+            }
+            .main-header h1 { margin: 0; font-weight: 700; font-size: 2.5rem; }
+            .main-header p { margin: 0.5rem 0 0 0; opacity: 0.9; }
+            </style>
+            """, unsafe_allow_html=True)
     
     @st.cache_data(ttl=3600)  # Cache README for 1 hour
     def render_readme_section(_self) -> str:
@@ -66,24 +126,25 @@ class UIComponents:
             return f"Error reading README.md: {e}"
     
     def render_navigation_sidebar(self) -> str:
-        """Render navigation sidebar and return selected page."""
-        st.sidebar.title("📍 Navigation")
+        """Render streamlined navigation sidebar."""
+        st.sidebar.markdown("### 🧭 Navigate")
         
         page_options = {
-            "🏠 Home": "Home",
-            "📁 Route Upload": "Route Upload", 
-            "🗃️ Saved Routes": "Saved Routes"
+            "🏠 Dashboard": "Home",
+            "📈 Upload Route": "Route Upload", 
+            "💾 My Routes": "Saved Routes"
         }
         
-        selected_display = st.sidebar.selectbox("Choose a page", list(page_options.keys()))
+        selected_display = st.sidebar.selectbox("", list(page_options.keys()), label_visibility="collapsed")
         selected_page = page_options[selected_display]
         
-        # Add unit toggle in sidebar
+        # Compact unit toggle
+        st.sidebar.markdown("---")
         st.sidebar.markdown("### ⚖️ Units")
-        use_imperial = st.sidebar.checkbox(
-            "Use Imperial Units (mi/ft)", 
+        use_imperial = st.sidebar.toggle(
+            "Imperial (mi/ft)", 
             key="use_imperial_units",
-            help="Toggle between metric (km/m) and imperial (mi/ft) units"
+            help="Switch between metric and imperial units"
         )
         
         # Store unit preference in session state
@@ -93,33 +154,86 @@ class UIComponents:
         return selected_page
     
     def render_home_page(self):
-        """Render the home page."""
+        """Render the modern, user-friendly home page."""
         log_function_entry(logger, "render_home_page")
         
-        st.header("🏠 Welcome to KOMpass")
+        # Welcome section
+        st.markdown("""
+        <div class="welcome-section">
+            <h2>Welcome to KOMpass! 🚴‍♂️</h2>
+            <p>Your intelligent cycling companion for route analysis, performance insights, and weather forecasting. 
+            Upload your routes and discover detailed analytics to improve your rides.</p>
+        </div>
+        """, unsafe_allow_html=True)
         
-        # Display README content
-        readme_content = self.render_readme_section()
-        st.markdown(readme_content)
+        # Quick stats/features overview
+        col1, col2, col3 = st.columns(3)
         
-        # Display environment info for debugging (if user is authenticated)
+        with col1:
+            st.markdown("""
+            <div class="feature-card">
+                <div class="feature-icon">📈</div>
+                <h3>Route Analysis</h3>
+                <p>Advanced metrics including elevation, gradients, and performance insights</p>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        with col2:
+            st.markdown("""
+            <div class="feature-card">
+                <div class="feature-icon">🌤️</div>
+                <h3>Weather Forecast</h3>
+                <p>Plan your rides with detailed weather conditions and forecasting</p>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        with col3:
+            st.markdown("""
+            <div class="feature-card">
+                <div class="feature-icon">🏆</div>
+                <h3>KOM Hunter</h3>
+                <p>Identify segments and optimize your training for those elusive KOMs</p>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        # Quick actions
+        st.markdown("### 🚀 Quick Actions")
+        st.markdown("""
+        <div class="feature-card">
+            <p>Use the navigation sidebar to:</p>
+            <ul>
+                <li><strong>📈 Upload Route</strong> - Analyze new GPX files</li>
+                <li><strong>💾 My Routes</strong> - View saved routes</li>
+                <li><strong>🔗 Connect Strava</strong> - Set up authentication</li>
+            </ul>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        # Getting started guide
+        with st.expander("🎯 Getting Started", expanded=False):
+            st.markdown("""
+            ### Ready to analyze your cycling routes?
+            
+            **1. Upload a Route** 📁  
+            Upload GPX files from Strava, Garmin Connect, RideWithGPS, or any cycling app
+            
+            **2. View Analysis** 📊  
+            Get detailed insights on elevation, gradients, traffic stops, and route complexity
+            
+            **3. Weather Check** 🌤️  
+            Plan your ride with weather forecasting for your route
+            
+            **4. Save & Compare** 💾  
+            Save routes for future reference and compare performance metrics
+            """)
+        
+        # Show system info only for authenticated users (much smaller)
         if self.auth_manager.is_authenticated():
-            with st.expander("🔧 System Information"):
-                env_info = self.config.get_environment_info()
-                validation = self.config.validate_configuration()
-                
-                col1, col2 = st.columns(2)
-                
-                with col1:
-                    st.markdown("**Environment:**")
-                    for key, value in env_info.items():
-                        st.write(f"• {key}: {value}")
-                
-                with col2:
-                    st.markdown("**Configuration Status:**")
-                    for key, status in validation.items():
-                        status_icon = "✅" if status else "❌"
-                        st.write(f"{status_icon} {key.replace('_', ' ').title()}")
+            with st.expander("⚙️ System Status", expanded=False):
+                status = self.config.validate_configuration()
+                for key, is_valid in status.items():
+                    icon = "✅" if is_valid else "❌"
+                    st.write(f"{icon} {key.replace('_', ' ').title()}")
         
         log_function_exit(logger, "render_home_page")
     
@@ -128,8 +242,12 @@ class UIComponents:
         """Render the route upload and analysis page."""
         log_function_entry(logger, "render_route_upload_page")
         
-        st.header("📁 Upload Route File")
-        st.markdown("Upload GPX files from ride tracking apps like RideWithGPS, Strava, Garmin Connect, etc.")
+        st.markdown("""
+        <div class="welcome-section">
+            <h2>📈 Upload & Analyze Route</h2>
+            <p>Upload your GPX files from Strava, Garmin, RideWithGPS, or any cycling app for detailed analysis</p>
+        </div>
+        """, unsafe_allow_html=True)
         
         # File upload widget - GPX only
         uploaded_file = st.file_uploader(
@@ -854,8 +972,12 @@ class UIComponents:
         """Render the saved routes page with cached route list."""
         log_function_entry(logger, "render_saved_routes_page")
         
-        st.header("🗃️ Saved Routes")
-        st.markdown("View and analyze your previously uploaded routes.")
+        st.markdown("""
+        <div class="welcome-section">
+            <h2>💾 My Routes</h2>
+            <p>View and analyze your previously uploaded cycling routes</p>
+        </div>
+        """, unsafe_allow_html=True)
         
         # Use session state to cache saved routes list
         if "saved_routes_list" not in st.session_state or st.button("🔄 Refresh Routes"):
