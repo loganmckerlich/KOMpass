@@ -136,7 +136,7 @@ class UIComponents:
             "💾 My Routes": "Saved Routes"
         }
         
-        selected_display = st.sidebar.selectbox("", list(page_options.keys()), label_visibility="collapsed")
+        selected_display = st.sidebar.selectbox("Page Navigation", list(page_options.keys()), label_visibility="collapsed")
         selected_page = page_options[selected_display]
         
         # Compact unit toggle
