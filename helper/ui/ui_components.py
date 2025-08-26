@@ -285,14 +285,21 @@ class UIComponents:
         st.markdown("""
         <div class="welcome-section">
             <h2>📈 Upload & Analyze Route</h2>
-            <p>Upload your GPX files from Strava, Garmin, RideWithGPS, or any cycling app for detailed analysis</p>
+            <p>Upload your GPX files or select from your recent Strava rides for detailed analysis</p>
         </div>
         """, unsafe_allow_html=True)
         
-        # Create tabs for different upload methods
-        tab1, tab2 = st.tabs(["📁 File Upload", "🚴 Recent Strava Rides"])
+        # Create radio button selection for upload method
+        st.markdown("### 🎯 Choose Route Source")
+        upload_method = st.radio(
+            "Select how you want to add a route:",
+            ["📁 Upload GPX File", "🚴 Select from Recent Strava Rides"],
+            help="Choose between uploading a file from your device or selecting from your recent Strava activities"
+        )
         
-        with tab1:
+        st.markdown("---")
+        
+        if upload_method == "📁 Upload GPX File":
             st.markdown("### Upload GPX File")
             # File upload widget - GPX only
             uploaded_file = st.file_uploader(
@@ -306,8 +313,8 @@ class UIComponents:
             else:
                 st.info("📂 Select a GPX file above to begin route analysis.")
         
-        with tab2:
-            st.markdown("### Analyze Recent Strava Rides")
+        else:  # Strava rides selection
+            st.markdown("### Select from Recent Strava Rides")
             self._render_strava_routes_section()
         
         log_function_exit(logger, "render_route_upload_page")
@@ -485,6 +492,23 @@ class UIComponents:
         activity_id = activity.get('id')
         activity_name = activity.get('name', 'Strava Ride')
         
+        # Create cache key for this Strava activity
+        cache_key = f"strava_route_data_{activity_id}"
+        stats_key = f"strava_route_stats_{activity_id}"
+        
+        # Check if we have cached data for this activity
+        if cache_key in st.session_state and stats_key in st.session_state:
+            # Use cached data
+            route_data = st.session_state[cache_key]
+            stats = st.session_state[stats_key]
+            st.success(f"✅ Strava ride '{activity_name}' loaded from cache!")
+            logger.info(f"Using cached data for Strava activity: {activity_id}")
+            
+            # Render analysis using the same function as uploaded files
+            self._render_route_analysis(route_data, stats, f"Strava: {activity_name}")
+            log_function_exit(logger, "_process_strava_activity", "Success - from cache")
+            return
+
         with st.spinner(f"Fetching GPS data for '{activity_name}'..."):
             try:
                 access_token = st.session_state.get("access_token")
@@ -504,13 +528,22 @@ class UIComponents:
                 # Convert Strava streams to route format
                 route_data = self._convert_strava_streams_to_route(streams, activity)
                 
-                # Calculate route statistics
-                stats = self.route_processor.calculate_route_statistics(
-                    route_data, 
-                    include_traffic_analysis=False
-                )
+                # Calculate route statistics using the same processor as uploaded files
+                with st.spinner("Processing route data..."):
+                    start_time = time.time()
+                    stats = self.route_processor.calculate_route_statistics(
+                        route_data, 
+                        include_traffic_analysis=False  # Traffic analysis remains optional for performance
+                    )
+                    processing_time = time.time() - start_time
                 
-                # Render analysis
+                # Cache the processed data in session state (same as uploaded files)
+                st.session_state[cache_key] = route_data
+                st.session_state[stats_key] = stats
+                
+                logger.info(f"Strava activity processing completed in {processing_time:.2f}s")
+                
+                # Render analysis using the same function as uploaded files
                 st.success(f"✅ Successfully loaded GPS data for '{activity_name}'!")
                 self._render_route_analysis(route_data, stats, f"Strava: {activity_name}")
                 
@@ -617,6 +650,15 @@ class UIComponents:
                 point_density = stats['total_points'] / max(stats.get('total_distance_km', 1), 0.1)
                 st.metric("Route Detail", f"{point_density:.0f} pts/km")
         
+        # Add hill detection and route complexity explanations
+        with st.expander("🔍 Analysis Methodology", expanded=False):
+            self._render_analysis_methodology()
+        
+        # Elevation profile graph
+        if route_data and self._has_elevation_data(route_data):
+            st.subheader("📊 Elevation Profile")
+            self._render_elevation_graph(route_data, stats)
+        
         # Advanced analysis options (expandable)
         with st.expander("🔬 Advanced Analysis", expanded=False):
             col1, col2 = st.columns(2)
@@ -640,18 +682,32 @@ class UIComponents:
             with st.expander("🛣️ Route Complexity Analysis", expanded=False):
                 self._render_complexity_analysis(stats['complexity_analysis'], stats.get('ml_features', {}))
         
-        if stats.get('terrain_analysis') and stats.get('power_analysis'):
-            with st.expander("🏔️ Terrain & Power Analysis", expanded=False):
-                self._render_terrain_analysis(stats['terrain_analysis'], stats.get('power_analysis', {}))
+        if stats.get('terrain_analysis'):
+            with st.expander("🏔️ Terrain Analysis", expanded=False):
+                self._render_terrain_analysis(stats['terrain_analysis'], {})
         
         if stats.get('traffic_analysis', {}).get('analysis_available'):
             with st.expander("🚦 Traffic Analysis Results", expanded=True):
                 self._render_traffic_analysis(stats['traffic_analysis'])
         
-        if stats.get('ml_features'):
-            with st.expander("🤖 ML Features & Advanced Metrics", expanded=False):
-                self._render_ml_features(stats['ml_features'])
+        # ML features are now hidden as requested - data still collected for backend ML use
+        # if stats.get('ml_features'):
+        #     with st.expander("🤖 ML Features & Advanced Metrics", expanded=False):
+        #         self._render_ml_features(stats['ml_features'])
         
+        # Automatically generate and cache comprehensive dataframe for ML use
+        try:
+            df = self.route_processor.create_analysis_dataframe(route_data, stats)
+            if not df.empty:
+                # Cache the dataframe for ML use
+                route_name = route_data.get('metadata', {}).get('name', filename)
+                cache_key = f"analysis_dataframe_{hash(str(route_data))}"
+                st.session_state[cache_key] = df
+                st.session_state['latest_analysis_dataframe'] = df  # Always keep latest
+                logger.info(f"Cached comprehensive dataframe for route: {route_name}")
+        except Exception as e:
+            logger.warning(f"Could not cache dataframe: {e}")
+
         # Weather analysis section
         self._render_weather_analysis_section(route_data, stats)
         
@@ -752,7 +808,13 @@ class UIComponents:
                 df = self.route_processor.create_analysis_dataframe(route_data, stats)
                 
                 if not df.empty:
-                    st.success("✅ Detailed analysis dataframe created!")
+                    # Cache the dataframe for ML use
+                    route_name = route_data.get('metadata', {}).get('name', 'route')
+                    cache_key = f"analysis_dataframe_{route_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+                    st.session_state[cache_key] = df
+                    st.session_state['latest_analysis_dataframe'] = df  # Always keep latest
+                    
+                    st.success(f"✅ Detailed analysis dataframe created and cached for ML use!")
                     
                     # Show dataframe summary
                     st.subheader("📊 Route Data Overview")
@@ -788,6 +850,9 @@ class UIComponents:
                     if hasattr(df, 'attrs') and df.attrs:
                         with st.expander("📝 Analysis Metadata", expanded=False):
                             st.json(df.attrs)
+                            
+                    # Info about caching for ML
+                    st.info("💡 **ML Ready**: This comprehensive dataset is now cached and ready for machine learning analysis.")
                 else:
                     st.warning("⚠️ No data available to create dataframe")
                     
@@ -912,39 +977,157 @@ class UIComponents:
             if ml_features.get('route_compactness'):
                 st.metric("Route Compactness", f"{ml_features.get('route_compactness', 0)}")
     
+    def _has_elevation_data(self, route_data: Dict) -> bool:
+        """Check if route data contains elevation information."""
+        try:
+            for track in route_data.get('tracks', []):
+                for segment in track.get('segments', []):
+                    for point in segment:
+                        if point.get('elevation') is not None:
+                            return True
+            return False
+        except:
+            return False
+    
+    def _render_elevation_graph(self, route_data: Dict, stats: Dict):
+        """Render elevation profile graph using Streamlit's native charting."""
+        import pandas as pd
+        
+        try:
+            # Extract elevation data with cumulative distance
+            elevation_data = []
+            cumulative_distance = 0.0
+            prev_point = None
+            
+            for track in route_data.get('tracks', []):
+                for segment in track.get('segments', []):
+                    for point in segment:
+                        elevation = point.get('elevation')
+                        if elevation is not None:
+                            # Calculate distance from previous point
+                            if prev_point is not None:
+                                from ..processing.route_processor import haversine_distance
+                                distance_km = haversine_distance(
+                                    prev_point['lat'], prev_point['lon'],
+                                    point['lat'], point['lon']
+                                )
+                                cumulative_distance += distance_km
+                            
+                            elevation_data.append({
+                                'Distance (km)': cumulative_distance,
+                                'Elevation (m)': elevation
+                            })
+                            prev_point = point
+            
+            if not elevation_data:
+                st.info("📊 No elevation data available for graphing.")
+                return
+            
+            # Create DataFrame
+            df = pd.DataFrame(elevation_data)
+            
+            # Use unit converter for proper display
+            use_imperial = getattr(st.session_state, 'use_imperial', False)
+            if use_imperial:
+                df['Distance (mi)'] = df['Distance (km)'] * 0.621371
+                df['Elevation (ft)'] = df['Elevation (m)'] * 3.28084
+                st.line_chart(df.set_index('Distance (mi)')['Elevation (ft)'], height=300)
+            else:
+                st.line_chart(df.set_index('Distance (km)')['Elevation (m)'], height=300)
+            
+            # Add elevation statistics below the graph
+            col1, col2, col3, col4 = st.columns(4)
+            with col1:
+                min_elev = df['Elevation (m)'].min()
+                if use_imperial:
+                    st.metric("Min Elevation", f"{min_elev * 3.28084:.0f} ft")
+                else:
+                    st.metric("Min Elevation", f"{min_elev:.0f} m")
+            
+            with col2:
+                max_elev = df['Elevation (m)'].max()
+                if use_imperial:
+                    st.metric("Max Elevation", f"{max_elev * 3.28084:.0f} ft")
+                else:
+                    st.metric("Max Elevation", f"{max_elev:.0f} m")
+            
+            with col3:
+                elev_gain = max_elev - min_elev
+                if use_imperial:
+                    st.metric("Elevation Range", f"{elev_gain * 3.28084:.0f} ft")
+                else:
+                    st.metric("Elevation Range", f"{elev_gain:.0f} m")
+            
+            with col4:
+                total_distance = df['Distance (km)'].max()
+                if use_imperial:
+                    st.metric("Total Distance", f"{total_distance * 0.621371:.2f} mi")
+                else:
+                    st.metric("Total Distance", f"{total_distance:.2f} km")
+                    
+        except Exception as e:
+            logger.error(f"Error rendering elevation graph: {e}")
+            st.error("❌ Error creating elevation graph. Please try again.")
+
+    def _render_analysis_methodology(self):
+        """Render information about analysis methodology and metrics."""
+        st.subheader("📚 How We Analyze Your Route")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.markdown("#### 🏔️ Hill Detection")
+            st.markdown("""
+            **What counts as a hill:**
+            - **Start of climb**: Gradient > 3% for at least 10m
+            - **Continue climb**: Gradient > 1% 
+            - **End of climb**: Gradient ≤ 1% or route ends
+            - **Minimum climb**: Only hills with >10m elevation gain are counted
+            
+            **Gradient Categories:**
+            - 🟢 **Flat**: 0-3% gradient
+            - 🟡 **Rolling**: 3-6% gradient  
+            - 🟠 **Moderate**: 6-10% gradient
+            - 🔴 **Steep**: >10% gradient
+            """)
+            
+        with col2:
+            st.markdown("#### 🛣️ Route Complexity Metrics")
+            st.markdown("""
+            **Straightness Index:**
+            - Ratio of direct distance to actual route distance
+            - 1.0 = perfectly straight, lower = more winding
+            
+            **Average Turn Angle:**
+            - Mean absolute bearing change between segments
+            - Higher values = more turns and direction changes
+            
+            **Route Compactness:**
+            - Route distance vs. bounding box diagonal
+            - Indicates how much the route explores an area
+            
+            **Difficulty Index:**
+            - Combines gradient percentages and complexity
+            - Scale: 0-1 (higher = more challenging)
+            """)
+    
     def _render_terrain_analysis(self, terrain: Dict, power: Dict):
-        """Render terrain and power analysis."""
+        """Render terrain analysis without power assumptions."""
         st.subheader("🏔️ Terrain Classification")
         
         col1, col2, col3 = st.columns(3)
         
         with col1:
             st.metric("Terrain Type", terrain.get('terrain_type', 'Unknown'))
-            if power:
-                st.metric("Avg Power", f"{power.get('average_power_watts', 0)} W")
         
         with col2:
-            if power:
-                st.metric("Est. Energy", f"{power.get('total_energy_kj', 0)} kJ")
-                st.metric("Energy/km", f"{power.get('energy_per_km_kj', 0)} kJ/km")
-        
-        with col3:
             terrain_dist = terrain.get('terrain_distribution', {})
             st.metric("Flat Sections", f"{terrain_dist.get('flat_percent', 0):.1f}%")
-            st.metric("Steep Climbs", f"{terrain_dist.get('steep_climbs_percent', 0):.1f}%")
+            st.metric("Rolling Hills", f"{terrain_dist.get('rolling_percent', 0):.1f}%")
         
-        # Power zone distribution
-        if power and power.get('power_zones'):
-            st.subheader("⚡ Power Zone Distribution")
-            zones = power['power_zones']
-            
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                st.metric("Endurance Zone", f"{zones.get('endurance_percent', 0)}%", help="<200W")
-            with col2:
-                st.metric("Tempo Zone", f"{zones.get('tempo_percent', 0)}%", help="200-300W")
-            with col3:
-                st.metric("Threshold Zone", f"{zones.get('threshold_percent', 0)}%", help=">300W")
+        with col3:
+            st.metric("Moderate Climbs", f"{terrain_dist.get('moderate_climbs_percent', 0):.1f}%")
+            st.metric("Steep Climbs", f"{terrain_dist.get('steep_climbs_percent', 0):.1f}%")
     
     def _render_traffic_analysis(self, traffic: Dict):
         """Render traffic stop analysis."""
