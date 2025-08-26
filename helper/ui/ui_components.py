@@ -47,7 +47,7 @@ class UIComponents:
                 st.image(
                     "IMG_1855.png",
                     width=50,  # Reduced from 80 for better mobile experience
-                    use_column_width=False
+                    use_container_width=False
                 )
             except FileNotFoundError:
                 # Fallback to CSS-generated logo if image file not found
