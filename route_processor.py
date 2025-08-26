@@ -17,11 +17,7 @@ import requests
 import time
 import streamlit as st
 import hashlib
-try:
-    from fitparse import FitFile
-    FIT_SUPPORT = True
-except ImportError:
-    FIT_SUPPORT = False
+# FIT support removed - GPX only
 
 @st.cache_data(ttl=3600)  # Cache for 1 hour
 def haversine_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -744,98 +740,8 @@ class RouteProcessor:
         except Exception as e:
             raise ValueError(f"Error parsing GPX file: {str(e)}")
     
-    def parse_fit_file(self, fit_content: bytes) -> Dict:
-        """Parse FIT file content and extract route data.
-        
-        Args:
-            fit_content: Bytes content of the FIT file
-            
-        Returns:
-            Dictionary containing parsed route data
-        """
-        if not FIT_SUPPORT:
-            raise ValueError("FIT file support not available. Please install fitparse library.")
-        
-        try:
-            # Create a temporary file to parse
-            import tempfile
-            with tempfile.NamedTemporaryFile(delete=False, suffix='.fit') as tmp_file:
-                tmp_file.write(fit_content)
-                tmp_file.flush()
-                
-                fitfile = FitFile(tmp_file.name)
-                
-                route_data = {
-                    'metadata': {},
-                    'tracks': [],
-                    'routes': [],
-                    'waypoints': []
-                }
-                
-                points = []
-                track_name = "FIT Activity"
-                
-                # Process record messages (GPS points)
-                for record in fitfile.get_messages('record'):
-                    lat = None
-                    lon = None
-                    elevation = None
-                    timestamp = None
-                    
-                    for field in record:
-                        if field.name == 'position_lat':
-                            lat = field.value * (180.0 / 2**31) if field.value else None
-                        elif field.name == 'position_long':
-                            lon = field.value * (180.0 / 2**31) if field.value else None
-                        elif field.name == 'altitude':
-                            elevation = field.value
-                        elif field.name == 'timestamp':
-                            timestamp = field.value
-                    
-                    # Only add points with valid GPS coordinates
-                    if lat is not None and lon is not None:
-                        point_data = {
-                            'lat': lat,
-                            'lon': lon,
-                            'elevation': elevation,
-                            'time': timestamp.isoformat() if timestamp else None
-                        }
-                        points.append(point_data)
-                
-                # Get activity info if available
-                for file_id in fitfile.get_messages('file_id'):
-                    for field in file_id:
-                        if field.name == 'time_created':
-                            route_data['metadata']['time'] = field.value.isoformat() if field.value else None
-                
-                # Get session info for metadata
-                for session in fitfile.get_messages('session'):
-                    for field in session:
-                        if field.name == 'start_time':
-                            route_data['metadata']['start_time'] = field.value.isoformat() if field.value else None
-                        elif field.name == 'sport':
-                            route_data['metadata']['sport'] = field.value
-                
-                # Add points as a track
-                if points:
-                    track_data = {
-                        'name': track_name,
-                        'segments': [points]
-                    }
-                    route_data['tracks'].append(track_data)
-                    route_data['metadata']['name'] = track_name
-                    route_data['metadata']['description'] = f"FIT file with {len(points)} GPS points"
-                
-                # Clean up temp file
-                os.unlink(tmp_file.name)
-                
-                return route_data
-                
-        except Exception as e:
-            raise ValueError(f"Error parsing FIT file: {str(e)}")
-    
     def parse_route_file(self, file_content: bytes, filename: str) -> Dict:
-        """Parse route file content (GPX or FIT) and extract route data.
+        """Parse route file content (GPX only) and extract route data.
         
         Args:
             file_content: File content as bytes
@@ -852,22 +758,16 @@ class RouteProcessor:
                 return self.parse_gpx_file(gpx_content)
             except UnicodeDecodeError:
                 raise ValueError("Invalid GPX file: Unable to decode as UTF-8")
-        
-        elif file_extension == 'fit':
-            return self.parse_fit_file(file_content)
-        
         else:
-            raise ValueError(f"Unsupported file type: {file_extension}. Supported types: GPX, FIT")
+            raise ValueError(f"Unsupported file type: {file_extension}. Only GPX files are supported.")
     
     @st.cache_data(ttl=3600)  # Cache route statistics for 1 hour
-    def calculate_route_statistics(_self, route_data: Dict, include_traffic_analysis: bool = False, 
-                                  enable_advanced_analysis: bool = True) -> Dict:
+    def calculate_route_statistics(_self, route_data: Dict, include_traffic_analysis: bool = False) -> Dict:
         """Calculate comprehensive statistics for the route including ML-ready features.
         
         Args:
             route_data: Parsed route data dictionary
             include_traffic_analysis: Whether to include traffic stop analysis (slow)
-            enable_advanced_analysis: Whether to include power and ML features
             
         Returns:
             Dictionary containing route statistics and advanced metrics
@@ -939,8 +839,8 @@ class RouteProcessor:
         stats['total_elevation_gain_m'] = round(stats['total_elevation_gain_m'], 1)
         stats['total_elevation_loss_m'] = round(stats['total_elevation_loss_m'], 1)
         
-        # Advanced ML-ready metrics (only if enabled)
-        if len(all_points) >= 2 and enable_advanced_analysis:
+        # Advanced ML-ready metrics (always calculated)
+        if len(all_points) >= 2:
             # Gradient analysis
             gradient_analysis = _self._analyze_gradients(all_points)
             stats['gradient_analysis'] = gradient_analysis
@@ -1002,10 +902,6 @@ class RouteProcessor:
                 })
             
             stats['ml_features'] = ml_features
-        elif len(all_points) >= 2:
-            # Basic gradient analysis for essential metrics even when advanced analysis is disabled
-            gradient_analysis = _self._analyze_gradients(all_points)
-            stats['gradient_analysis'] = gradient_analysis
         
         return stats
     

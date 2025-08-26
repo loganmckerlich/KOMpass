@@ -129,24 +129,24 @@ class UIComponents:
         log_function_entry(logger, "render_route_upload_page")
         
         st.header("📁 Upload Route File")
-        st.markdown("Upload GPX or FIT files from ride tracking apps like RideWithGPS, Strava, Garmin Connect, etc.")
+        st.markdown("Upload GPX files from ride tracking apps like RideWithGPS, Strava, Garmin Connect, etc.")
         
-        # File upload widget - update supported types
+        # File upload widget - GPX only
         uploaded_file = st.file_uploader(
-            "Choose a GPX or FIT file",
-            type=['gpx', 'fit'],
-            help=f"Upload a GPX or FIT file containing your route data (max {self.config.app.max_file_size_mb}MB)"
+            "Choose a GPX file",
+            type=['gpx'],
+            help=f"Upload a GPX file containing your route data (max {self.config.app.max_file_size_mb}MB)"
         )
         
         if uploaded_file is not None:
             self._process_uploaded_file(uploaded_file)
         else:
-            st.info("📂 Select a GPX or FIT file above to begin route analysis.")
+            st.info("📂 Select a GPX file above to begin route analysis.")
         
         log_function_exit(logger, "render_route_upload_page")
     
     def _process_uploaded_file(self, uploaded_file):
-        """Process uploaded GPX or FIT file and render analysis.
+        """Process uploaded GPX file and render analysis.
         Uses session state to cache processed data and avoid reprocessing.
         """
         log_function_entry(logger, "_process_uploaded_file", filename=uploaded_file.name)
@@ -181,11 +181,10 @@ class UIComponents:
                     start_time = time.time()
                     route_data = self.route_processor.parse_route_file(file_content_bytes, uploaded_file.name)
                     
-                    # Calculate basic stats quickly (without traffic analysis by default)
+                    # Calculate statistics with all advanced analysis enabled
                     stats = self.route_processor.calculate_route_statistics(
                         route_data, 
-                        include_traffic_analysis=False,  # Skip slow traffic analysis by default
-                        enable_advanced_analysis=True
+                        include_traffic_analysis=False  # Traffic analysis remains optional for performance
                     )
                     processing_time = time.time() - start_time
                 
@@ -203,7 +202,7 @@ class UIComponents:
         except Exception as e:
             log_error(logger, e, f"Error processing file: {uploaded_file.name}")
             st.error(f"❌ Error processing file: {str(e)}")
-            st.info("Please ensure you've uploaded a valid GPX or FIT file.")
+            st.info("Please ensure you've uploaded a valid GPX file.")
     
     def _render_route_analysis(self, route_data: Dict, stats: Dict, filename: str):
         """Render comprehensive route analysis."""
@@ -349,8 +348,7 @@ class UIComponents:
                 # Re-calculate with traffic analysis enabled
                 full_stats = self.route_processor.calculate_route_statistics(
                     route_data, 
-                    include_traffic_analysis=True,
-                    enable_advanced_analysis=True
+                    include_traffic_analysis=True
                 )
                 
                 # Update the session state with new stats
