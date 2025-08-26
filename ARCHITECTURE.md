@@ -15,7 +15,8 @@ KOMpass/
 ├── ui_components.py        # UI rendering and user interactions
 ├── route_processor.py      # Route analysis and processing (existing)
 ├── weather_analyzer.py     # Weather analysis (existing)
-├── strava_connect.py       # Strava API integration (enhanced)
+├── units.py                # Unit conversion utilities
+├── verify_oauth_config.py  # OAuth configuration verification
 ├── strava_oauth.py         # OAuth client (existing)
 └── logs/                   # Application logs directory
 ```

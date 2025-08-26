@@ -174,13 +174,12 @@ class UIComponents:
                 logger.info(f"Using cached data for file: {uploaded_file.name}")
             else:
                 # Process the file
-                gpx_content = file_content_bytes.decode('utf-8')
                 st.success(f"✅ File '{uploaded_file.name}' uploaded successfully! ({file_size_mb:.1f}MB)")
                 
                 # Process the route with progress indicators
                 with st.spinner("Processing route data..."):
                     start_time = time.time()
-                    route_data = self.route_processor.parse_route_file(file_content, uploaded_file.name)
+                    route_data = self.route_processor.parse_route_file(file_content_bytes, uploaded_file.name)
                     stats = self.route_processor.calculate_route_statistics(route_data)
                     processing_time = time.time() - start_time
                 
