@@ -311,53 +311,27 @@ class AuthenticationManager:
 
 
     def _render_authenticated_ui(self):
-        """Render UI for authenticated users."""
+        """Render minimal UI for authenticated users."""
         athlete_info = self.get_athlete_info()
         
         if athlete_info:
-            col1, col2 = st.columns([3, 1])
+            athlete_name = f"{athlete_info.get('firstname', '')} {athlete_info.get('lastname', '')}".strip()
+            st.success(f"✅ Connected as **{athlete_name or 'Unknown Athlete'}**")
             
-            with col1:
-                athlete_name = f"{athlete_info.get('firstname', '')} {athlete_info.get('lastname', '')}".strip()
-                st.success(f"✅ Connected to Strava as **{athlete_name or 'Unknown Athlete'}**")
+            # Simple logout button
+            if st.button("🚪 Logout", type="secondary", use_container_width=True):
+                self.logout()
+                st.rerun()
             
-            with col2:
-                if st.button("🚪 Logout", type="secondary"):
-                    self.logout()
-                    st.rerun()
-            
-            # Display athlete details in expander
-            with st.expander("👤 Athlete Information"):
-                col1, col2 = st.columns(2)
-                
-                with col1:
-                    st.write(f"**Username:** {athlete_info.get('username', 'N/A')}")
-                    st.write(f"**Country:** {athlete_info.get('country', 'N/A')}")
-                    st.write(f"**Sex:** {athlete_info.get('sex', 'N/A')}")
-                
-                with col2:
-                    if athlete_info.get('profile'):
-                        st.markdown(f"**Profile:** [View on Strava]({athlete_info.get('profile')})")
-                    
-                    if athlete_info.get('follower_count') is not None:
-                        st.write(f"**Followers:** {athlete_info.get('follower_count', 0)}")
-                    
-                    if athlete_info.get('friend_count') is not None:
-                        st.write(f"**Following:** {athlete_info.get('friend_count', 0)}")
-                
-                # Display profile picture if available
-                if athlete_info.get('profile_medium'):
-                    st.image(athlete_info.get('profile_medium'), width=100, caption="Profile Picture")
-            
-            # Display rider fitness data
-            self._render_rider_fitness_data()
+            # Link to fitness page
+            st.info("💡 Visit the **Rider Fitness** page to view your comprehensive fitness data and analytics.")
         
         else:
             st.warning("⚠️ Authenticated but unable to fetch athlete information")
             
-            col1, col2 = st.columns([3, 1])
+            col1, col2 = st.columns([1, 1])
             with col1:
-                if st.button("🔄 Retry Athlete Info"):
+                if st.button("🔄 Retry", type="secondary"):
                     self._fetch_athlete_info()
                     st.rerun()
             
