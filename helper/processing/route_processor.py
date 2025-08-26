@@ -1023,7 +1023,6 @@ class RouteProcessor:
         return df
     
     @st.cache_resource(ttl=3600)  # Cache maps for 1 hour
-    @st.cache_data(ttl=7200)  # Cache maps for 2 hours  
     def create_route_map(_self, route_data_hash: str, route_data: Dict, stats: Dict) -> folium.Map:
         """Create a folium map visualization of the route.
         Cached for performance as map generation is expensive.
