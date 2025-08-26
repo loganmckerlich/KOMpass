@@ -96,8 +96,7 @@ class UIComponents:
                 help="Enable Strava-inspired custom styling. Disable to use default Streamlit styling."
             )
             
-            # Store CSS preference in session state
-            st.session_state.enable_custom_css = enable_custom_css
+            # Note: CSS preference is automatically stored in session state by the toggle widget
         
         # Minimal authentication in sidebar
         with st.sidebar:
