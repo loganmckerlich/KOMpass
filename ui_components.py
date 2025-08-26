@@ -282,14 +282,26 @@ class UIComponents:
         """Render climbing analysis section."""
         st.subheader("🚴‍♂️ Climbing Analysis")
         
+        # Get unit preference
+        use_imperial = getattr(st.session_state, 'use_imperial', False)
+        units = UnitConverter.convert_route_stats({'climb_analysis': climb}, use_imperial)
+        climb_converted = units.get('climb_analysis', climb)
+        unit_labels = units.get('_units', {'distance': 'km', 'elevation': 'm'})
+        
         col1, col2, col3 = st.columns(3)
         
         with col1:
             st.metric("Number of Climbs", climb.get('climb_count', 0))
-            st.metric("Total Climb Distance", f"{climb.get('total_climb_distance_km', 0)} km")
+            if use_imperial and 'total_climb_distance_mi' in climb_converted:
+                st.metric("Total Climb Distance", f"{climb_converted['total_climb_distance_mi']:.2f} {unit_labels['distance']}")
+            else:
+                st.metric("Total Climb Distance", f"{climb.get('total_climb_distance_km', 0):.2f} {unit_labels['distance']}")
         
         with col2:
-            st.metric("Avg Climb Length", f"{climb.get('average_climb_length_m', 0):.0f} m")
+            if use_imperial and 'average_climb_length_ft' in climb_converted:
+                st.metric("Avg Climb Length", f"{climb_converted['average_climb_length_ft']:.0f} {unit_labels['elevation']}")
+            else:
+                st.metric("Avg Climb Length", f"{climb.get('average_climb_length_m', 0):.0f} {unit_labels['elevation']}")
             st.metric("Avg Climb Gradient", f"{climb.get('average_climb_gradient', 0)}%")
         
         with col3:
@@ -354,6 +366,12 @@ class UIComponents:
         st.subheader("🚦 Traffic Stop Analysis")
         
         if traffic.get('analysis_available'):
+            # Get unit preference
+            use_imperial = getattr(st.session_state, 'use_imperial', False)
+            units = UnitConverter.convert_route_stats({'traffic_analysis': traffic}, use_imperial)
+            traffic_converted = units.get('traffic_analysis', traffic)
+            unit_labels = units.get('_units', {'distance': 'km'})
+            
             col1, col2, col3 = st.columns(3)
             
             with col1:
@@ -362,11 +380,17 @@ class UIComponents:
             
             with col2:
                 st.metric("Total Potential Stops", traffic.get('total_potential_stops', 0))
-                st.metric("Stop Density", f"{traffic.get('stop_density_per_km', 0)} stops/km")
+                if use_imperial and 'stop_density_per_mi' in traffic_converted:
+                    st.metric("Stop Density", f"{traffic_converted['stop_density_per_mi']:.2f} stops/{unit_labels['distance']}")
+                else:
+                    st.metric("Stop Density", f"{traffic.get('stop_density_per_km', 0):.2f} stops/{unit_labels['distance']}")
             
             with col3:
-                st.metric("Avg Distance Between Stops", f"{traffic.get('average_distance_between_stops_km', 0)} km")
-                st.metric("Est. Time Penalty", f"{traffic.get('estimated_time_penalty_minutes', 0)} min")
+                if use_imperial and 'average_distance_between_stops_mi' in traffic_converted:
+                    st.metric("Avg Distance Between Stops", f"{traffic_converted['average_distance_between_stops_mi']:.2f} {unit_labels['distance']}")
+                else:
+                    st.metric("Avg Distance Between Stops", f"{traffic.get('average_distance_between_stops_km', 0):.2f} {unit_labels['distance']}")
+                st.metric("Est. Time Penalty", f"{traffic.get('estimated_time_penalty_minutes', 0):.1f} min")
             
             # Additional traffic info
             if traffic.get('infrastructure_summary'):
@@ -633,12 +657,19 @@ class UIComponents:
     
     def _render_saved_route_item(self, route_info: Dict, index: int):
         """Render a single saved route item."""
-        with st.expander(f"📍 {route_info['name']} - {route_info['distance_km']} km"):
+        # Get unit preference
+        use_imperial = getattr(st.session_state, 'use_imperial', False)
+        
+        # Format distance and elevation with appropriate units
+        distance_str = UnitConverter.format_distance(route_info['distance_km'], use_imperial)
+        elevation_str = UnitConverter.format_elevation(route_info['elevation_gain_m'], use_imperial)
+        
+        with st.expander(f"📍 {route_info['name']} - {distance_str}"):
             col1, col2 = st.columns(2)
             
             with col1:
-                st.write(f"**Distance:** {route_info['distance_km']} km")
-                st.write(f"**Elevation Gain:** {route_info['elevation_gain_m']} m")
+                st.write(f"**Distance:** {distance_str}")
+                st.write(f"**Elevation Gain:** {elevation_str}")
                 st.write(f"**Processed:** {route_info['processed_at'][:10]}")
             
             with col2:
