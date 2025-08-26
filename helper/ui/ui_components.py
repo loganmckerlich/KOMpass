@@ -1450,7 +1450,7 @@ class UIComponents:
                     st.error(f"❌ Error generating map: {str(e)}")
                     return
         
-        # Add custom CSS to prevent map flickering
+        # Add custom CSS to prevent map flickering with feature group support
         st.markdown("""
         <style>
         /* Folium map container stabilization */
@@ -1459,6 +1459,8 @@ class UIComponents:
             transition: none !important;
             animation: none !important;
             transform: none !important;
+            will-change: auto !important;
+            contain: layout style paint !important;
         }
         
         /* Prevent container reflows during map initialization */
@@ -1466,25 +1468,48 @@ class UIComponents:
             min-height: 500px;
             position: relative;
             overflow: hidden;
+            contain: layout !important;
         }
         
-        /* Stabilize map wrapper */
+        /* Stabilize map wrapper with better containment */
         .stApp .element-container:has(iframe[title="streamlit_folium.st_folium"]) {
             transition: none !important;
             animation: none !important;
+            contain: layout style !important;
+            isolation: isolate !important;
         }
         
-        /* Remove any potential flickering animations */
+        /* Optimize iframe rendering for feature groups */
         .stApp iframe {
             backface-visibility: hidden;
             perspective: 1000px;
             transform: translateZ(0);
+            contain: strict !important;
+            will-change: auto !important;
+        }
+        
+        /* Prevent Leaflet layer flashing during feature group updates */
+        .leaflet-container {
+            background: #f8f9fa !important;
+        }
+        
+        .leaflet-layer {
+            will-change: auto !important;
+            transform: translateZ(0) !important;
         }
         </style>
         """, unsafe_allow_html=True)
         
-        # Display the map
-        st_folium(route_map, height=500, use_container_width=True, key="main_route_map")
+        # Display the map with enhanced stability parameters
+        st_folium(
+            route_map, 
+            height=500, 
+            use_container_width=True, 
+            key="main_route_map",
+            # Additional parameters for stability
+            returned_objects=["last_object_clicked"],  # Minimize returned data
+            debug=False  # Disable debug mode for cleaner output
+        )
     
     @st.fragment  # Independent fragment for save route section
     def _render_save_route_section(self, route_data: Dict, stats: Dict):

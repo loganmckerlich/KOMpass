@@ -1024,7 +1024,7 @@ class RouteProcessor:
     
     @st.cache_resource(ttl=3600)  # Cache maps for 1 hour
     def create_route_map(_self, route_data_hash: str, route_data: Dict, stats: Dict) -> folium.Map:
-        """Create a folium map visualization of the route.
+        """Create a folium map visualization of the route using feature groups for better stability.
         Cached for performance as map generation is expensive.
         
         Args:
@@ -1051,7 +1051,13 @@ class RouteProcessor:
             tiles='OpenStreetMap'
         )
         
-        # Add tracks
+        # Create feature groups for better organization and stability
+        route_lines_group = folium.FeatureGroup(name="Route Lines", show=True)
+        navigation_markers_group = folium.FeatureGroup(name="Navigation", show=True)
+        waypoints_group = folium.FeatureGroup(name="Waypoints", show=True)
+        traffic_group = folium.FeatureGroup(name="Traffic Infrastructure", show=True)
+        
+        # Add tracks to route lines group
         for track in route_data.get('tracks', []):
             for segment in track.get('segments', []):
                 if segment:
@@ -1062,9 +1068,9 @@ class RouteProcessor:
                         weight=3,
                         opacity=0.8,
                         popup=f"Track: {track['name']}"
-                    ).add_to(m)
+                    ).add_to(route_lines_group)
         
-        # Add routes
+        # Add routes to route lines group
         for route in route_data.get('routes', []):
             points = route.get('points', [])
             if points:
@@ -1075,17 +1081,17 @@ class RouteProcessor:
                     weight=3,
                     opacity=0.8,
                     popup=f"Route: {route['name']}"
-                ).add_to(m)
+                ).add_to(route_lines_group)
         
-        # Add waypoints
+        # Add waypoints to waypoints group
         for waypoint in route_data.get('waypoints', []):
             folium.Marker(
                 [waypoint['lat'], waypoint['lon']],
                 popup=f"{waypoint['name']}: {waypoint['description'] or 'Waypoint'}",
                 icon=folium.Icon(color='green', icon='info-sign')
-            ).add_to(m)
+            ).add_to(waypoints_group)
         
-        # Add start/end markers for tracks
+        # Add start/end markers to navigation group
         for track in route_data.get('tracks', []):
             for segment in track.get('segments', []):
                 if segment:
@@ -1095,7 +1101,7 @@ class RouteProcessor:
                         [start_point['lat'], start_point['lon']],
                         popup="Start",
                         icon=folium.Icon(color='green', icon='play')
-                    ).add_to(m)
+                    ).add_to(navigation_markers_group)
                     
                     # End marker
                     end_point = segment[-1]
@@ -1103,9 +1109,9 @@ class RouteProcessor:
                         [end_point['lat'], end_point['lon']],
                         popup="End",
                         icon=folium.Icon(color='red', icon='stop')
-                    ).add_to(m)
+                    ).add_to(navigation_markers_group)
         
-        # Add traffic infrastructure markers if available
+        # Add traffic infrastructure to traffic group
         if stats.get('traffic_analysis', {}).get('analysis_available'):
             traffic_analysis = stats['traffic_analysis']
             
@@ -1115,7 +1121,7 @@ class RouteProcessor:
                     [light['route_lat'], light['route_lon']],
                     popup=f"🚦 Traffic Light (±{light['distance_m']:.0f}m)",
                     icon=folium.Icon(color='orange', icon='exclamation-sign')
-                ).add_to(m)
+                ).add_to(traffic_group)
             
             # Add major road crossing markers
             for crossing in traffic_analysis.get('major_crossing_locations', []):
@@ -1123,7 +1129,13 @@ class RouteProcessor:
                     [crossing['route_lat'], crossing['route_lon']],
                     popup=f"🛣️ {crossing['road_name']} ({crossing['highway_type']})",
                     icon=folium.Icon(color='purple', icon='road')
-                ).add_to(m)
+                ).add_to(traffic_group)
+        
+        # Add all feature groups to map in batch
+        route_lines_group.add_to(m)
+        navigation_markers_group.add_to(m)
+        waypoints_group.add_to(m)
+        traffic_group.add_to(m)
         
         # Fit map to bounds
         if stats['bounds']:
