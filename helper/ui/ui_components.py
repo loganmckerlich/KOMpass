@@ -42,25 +42,33 @@ class UIComponents:
         header_col1, header_col2 = st.columns([1, 5])  # Better proportion for mobile
         
         with header_col1:
-            # Responsive logo with mobile-optimized styling
-            st.markdown("""
-            <div class="app-logo-container" style="
-                width: 80px; 
-                height: 80px; 
-                background: linear-gradient(45deg, #FC4C02, #FF6B35);
-                border-radius: 50%;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                color: white;
-                font-size: 2rem;
-                font-weight: bold;
-                margin: 1rem auto;
-                box-shadow: 0 4px 15px rgba(252, 76, 2, 0.3);
-            ">
-                🧭
-            </div>
-            """, unsafe_allow_html=True)
+            # App logo with responsive styling
+            try:
+                st.image(
+                    "IMG_1855.png",
+                    width=80,
+                    use_column_width=False
+                )
+            except FileNotFoundError:
+                # Fallback to CSS-generated logo if image file not found
+                st.markdown("""
+                <div class="app-logo-container" style="
+                    width: 80px; 
+                    height: 80px; 
+                    background: linear-gradient(45deg, #FC4C02, #FF6B35);
+                    border-radius: 50%;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    color: white;
+                    font-size: 2rem;
+                    font-weight: bold;
+                    margin: 1rem auto;
+                    box-shadow: 0 4px 15px rgba(252, 76, 2, 0.3);
+                ">
+                    🧭
+                </div>
+                """, unsafe_allow_html=True)
         
         with header_col2:
             st.markdown("""
@@ -136,7 +144,7 @@ class UIComponents:
             "💾 My Routes": "Saved Routes"
         }
         
-        selected_display = st.sidebar.selectbox("", list(page_options.keys()), label_visibility="collapsed")
+        selected_display = st.sidebar.selectbox("Page Navigation", list(page_options.keys()), label_visibility="collapsed")
         selected_page = page_options[selected_display]
         
         # Compact unit toggle
