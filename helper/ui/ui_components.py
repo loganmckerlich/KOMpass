@@ -950,6 +950,39 @@ class UIComponents:
                     st.error(f"❌ Error generating map: {str(e)}")
                     return
         
+        # Add custom CSS to prevent map flickering
+        st.markdown("""
+        <style>
+        /* Folium map container stabilization */
+        .stApp iframe[title="streamlit_folium.st_folium"] {
+            border: none !important;
+            transition: none !important;
+            animation: none !important;
+            transform: none !important;
+        }
+        
+        /* Prevent container reflows during map initialization */
+        div[data-testid="stVerticalBlock"] > div:has(iframe[title="streamlit_folium.st_folium"]) {
+            min-height: 500px;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        /* Stabilize map wrapper */
+        .stApp .element-container:has(iframe[title="streamlit_folium.st_folium"]) {
+            transition: none !important;
+            animation: none !important;
+        }
+        
+        /* Remove any potential flickering animations */
+        .stApp iframe {
+            backface-visibility: hidden;
+            perspective: 1000px;
+            transform: translateZ(0);
+        }
+        </style>
+        """, unsafe_allow_html=True)
+        
         # Display the map
         st_folium(route_map, height=500, use_container_width=True, key="main_route_map")
     
@@ -1038,6 +1071,40 @@ class UIComponents:
                     st.subheader(f"🗺️ {route_info['name']}")
                     with st.spinner("Loading map..."):
                         route_map = self.route_processor.create_route_map(route_data, stats)
+                        
+                        # Add custom CSS to prevent map flickering
+                        st.markdown("""
+                        <style>
+                        /* Folium map container stabilization */
+                        .stApp iframe[title="streamlit_folium.st_folium"] {
+                            border: none !important;
+                            transition: none !important;
+                            animation: none !important;
+                            transform: none !important;
+                        }
+                        
+                        /* Prevent container reflows during map initialization */
+                        div[data-testid="stVerticalBlock"] > div:has(iframe[title="streamlit_folium.st_folium"]) {
+                            min-height: 400px;
+                            position: relative;
+                            overflow: hidden;
+                        }
+                        
+                        /* Stabilize map wrapper */
+                        .stApp .element-container:has(iframe[title="streamlit_folium.st_folium"]) {
+                            transition: none !important;
+                            animation: none !important;
+                        }
+                        
+                        /* Remove any potential flickering animations */
+                        .stApp iframe {
+                            backface-visibility: hidden;
+                            perspective: 1000px;
+                            transform: translateZ(0);
+                        }
+                        </style>
+                        """, unsafe_allow_html=True)
+                        
                         st_folium(route_map, height=400, use_container_width=True, key=f"saved_route_map_{index}")
                     
                     logger.info(f"Displayed map for saved route: {route_info['name']}")
