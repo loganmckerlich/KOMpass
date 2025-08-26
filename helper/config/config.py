@@ -73,6 +73,27 @@ class PerformanceConfig:
     default_efficiency: float = 0.95
 
 
+@dataclass 
+class S3Config:
+    """Amazon S3 storage configuration."""
+    bucket_name: str = ""
+    aws_access_key_id: str = ""
+    aws_secret_access_key: str = ""
+    aws_region: str = "us-east-1"
+    enabled: bool = False
+    max_file_size_mb: int = 50  # Free tier limit consideration
+    max_user_storage_mb: int = 100  # Per-user storage limit
+    
+    def is_configured(self) -> bool:
+        """Check if S3 is properly configured."""
+        return bool(
+            self.bucket_name and 
+            self.aws_access_key_id and 
+            self.aws_secret_access_key and
+            self.enabled
+        )
+
+
 class ConfigManager:
     """Centralized configuration manager for the KOMpass application."""
     
@@ -83,6 +104,7 @@ class ConfigManager:
         self._app_config = None
         self._weather_config = None
         self._performance_config = None
+        self._s3_config = None
         
         self._load_configurations()
     
@@ -93,6 +115,7 @@ class ConfigManager:
             self._strava_config = self._load_strava_config()
             self._weather_config = self._load_weather_config()
             self._performance_config = self._load_performance_config()
+            self._s3_config = self._load_s3_config()
             
             logger.info("All configurations loaded successfully")
             
@@ -167,6 +190,25 @@ class ConfigManager:
         logger.debug(f"Performance config loaded - Rider weight: {config.default_rider_weight_kg}kg")
         return config
     
+    def _load_s3_config(self) -> S3Config:
+        """Load S3 storage configuration."""
+        config = S3Config(
+            bucket_name=os.environ.get("AWS_S3_BUCKET", ""),
+            aws_access_key_id=os.environ.get("AWS_ACCESS_KEY_ID", ""),
+            aws_secret_access_key=os.environ.get("AWS_SECRET_ACCESS_KEY", ""),
+            aws_region=os.environ.get("AWS_REGION", "us-east-1"),
+            enabled=os.environ.get("S3_STORAGE_ENABLED", "false").lower() == "true",
+            max_file_size_mb=int(os.environ.get("S3_MAX_FILE_SIZE_MB", "50")),
+            max_user_storage_mb=int(os.environ.get("S3_MAX_USER_STORAGE_MB", "100"))
+        )
+        
+        if config.enabled:
+            logger.info(f"S3 storage enabled - Bucket: {config.bucket_name}, Region: {config.aws_region}")
+        else:
+            logger.debug("S3 storage disabled - using local storage")
+        
+        return config
+    
     @property
     def strava(self) -> StravaConfig:
         """Get Strava configuration."""
@@ -187,6 +229,11 @@ class ConfigManager:
         """Get performance configuration."""
         return self._performance_config
     
+    @property
+    def s3(self) -> S3Config:
+        """Get S3 storage configuration."""
+        return self._s3_config
+    
     def is_strava_configured(self) -> bool:
         """Check if Strava API is properly configured."""
         return (
@@ -205,6 +252,8 @@ class ConfigManager:
             "data_directory": self._app_config.data_directory,
             "log_level": self._app_config.log_level,
             "weather_service": self._weather_config.base_url,
+            "s3_enabled": self._s3_config.enabled,
+            "s3_configured": self._s3_config.is_configured(),
         }
     
     def validate_configuration(self) -> Dict[str, bool]:
@@ -230,6 +279,15 @@ class ConfigManager:
         validation_results["performance_cda_valid"] = 0.1 <= self._performance_config.default_cda <= 1.0
         validation_results["performance_crr_valid"] = 0.001 <= self._performance_config.default_crr <= 0.02
         validation_results["performance_efficiency_valid"] = 0.7 <= self._performance_config.default_efficiency <= 1.0
+        
+        # Validate S3 config (only if enabled)
+        if self._s3_config.enabled:
+            validation_results["s3_bucket_name"] = bool(self._s3_config.bucket_name)
+            validation_results["s3_access_key"] = bool(self._s3_config.aws_access_key_id)
+            validation_results["s3_secret_key"] = bool(self._s3_config.aws_secret_access_key)
+            validation_results["s3_configured"] = self._s3_config.is_configured()
+        else:
+            validation_results["s3_disabled"] = True
         
         # Ensure all values are boolean before summing to prevent TypeError
         passed_checks = sum(bool(v) for v in validation_results.values())

@@ -17,6 +17,7 @@ from typing import Dict, List, Optional, Any, Tuple
 import time
 import math
 from ..config.logging_config import get_logger, log_function_entry, log_function_exit, log_error
+from ..storage.storage_manager import get_storage_manager
 
 logger = get_logger(__name__)
 
@@ -32,6 +33,7 @@ class RiderDataProcessor:
             oauth_client: StravaOAuth instance for API calls
         """
         self.oauth_client = oauth_client
+        self.storage_manager = get_storage_manager()
     
     @st.cache_data(ttl=3600)  # Cache for 1 hour
     def fetch_comprehensive_rider_data(_self, access_token: str) -> Dict[str, Any]:
@@ -2128,3 +2130,230 @@ class RiderDataProcessor:
             validation["is_valid"] = False
             validation["error"] = str(e)
             return validation
+    
+    def remove_pii_from_rider_data(self, rider_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Remove personally identifiable information from rider data before storage.
+        
+        Args:
+            rider_data: Complete rider data with potential PII
+            
+        Returns:
+            Sanitized rider data with PII removed
+        """
+        log_function_entry(logger, "remove_pii_from_rider_data")
+        
+        try:
+            sanitized_data = rider_data.copy()
+            
+            # Remove PII from basic_info
+            if sanitized_data.get("basic_info"):
+                basic_info = sanitized_data["basic_info"].copy()
+                
+                # Remove direct identifiers
+                pii_fields = [
+                    "firstname", "lastname", "profile", "profile_medium", 
+                    "city", "state", "country", "email", "premium",
+                    "created_at", "updated_at", "badge_type_id", "friend", 
+                    "follower", "athlete_type", "date_preference", 
+                    "measurement_preference", "clubs", "bikes", "shoes"
+                ]
+                
+                for field in pii_fields:
+                    basic_info.pop(field, None)
+                
+                # Keep only relevant fitness data
+                allowed_fields = ["id", "sex", "weight", "ftp"]
+                sanitized_basic_info = {k: v for k, v in basic_info.items() if k in allowed_fields}
+                
+                # Hash the user ID for anonymization but consistency
+                if "id" in sanitized_basic_info:
+                    import hashlib
+                    user_id_hash = hashlib.sha256(str(sanitized_basic_info["id"]).encode()).hexdigest()[:16]
+                    sanitized_basic_info["user_hash"] = user_id_hash
+                    del sanitized_basic_info["id"]
+                
+                sanitized_data["basic_info"] = sanitized_basic_info
+            
+            # Remove PII from recent activities
+            if sanitized_data.get("recent_activities"):
+                sanitized_activities = []
+                for activity in sanitized_data["recent_activities"]:
+                    sanitized_activity = activity.copy()
+                    
+                    # Remove location and identifying info
+                    pii_activity_fields = [
+                        "name", "location_city", "location_state", "location_country",
+                        "start_latlng", "end_latlng", "map", "photos", "gear",
+                        "description", "athlete", "segment_efforts", "splits_metric",
+                        "splits_standard", "laps", "gear_id", "external_id", "upload_id"
+                    ]
+                    
+                    for field in pii_activity_fields:
+                        sanitized_activity.pop(field, None)
+                    
+                    # Keep only performance metrics
+                    allowed_activity_fields = [
+                        "distance", "moving_time", "elapsed_time", "total_elevation_gain",
+                        "type", "start_date", "average_speed", "max_speed", "average_cadence",
+                        "average_watts", "weighted_average_watts", "kilojoules", "device_watts",
+                        "has_heartrate", "average_heartrate", "max_heartrate", "pr_count",
+                        "achievement_count", "kudos_count", "suffer_score", "workout_type"
+                    ]
+                    
+                    sanitized_activity = {k: v for k, v in sanitized_activity.items() 
+                                        if k in allowed_activity_fields}
+                    
+                    sanitized_activities.append(sanitized_activity)
+                
+                sanitized_data["recent_activities"] = sanitized_activities
+            
+            # Add anonymization metadata
+            sanitized_data["anonymization"] = {
+                "processed_at": datetime.now().isoformat(),
+                "pii_removed": True,
+                "anonymization_version": "1.0"
+            }
+            
+            logger.info("Successfully removed PII from rider data")
+            log_function_exit(logger, "remove_pii_from_rider_data", {"success": True})
+            
+            return sanitized_data
+            
+        except Exception as e:
+            log_error(logger, e, "Error removing PII from rider data")
+            log_function_exit(logger, "remove_pii_from_rider_data", {"success": False})
+            return rider_data
+    
+    def save_rider_data(self, rider_data: Dict[str, Any], user_id: str) -> bool:
+        """
+        Save rider data to storage with PII removed.
+        
+        Args:
+            rider_data: Complete rider data
+            user_id: Strava user ID
+            
+        Returns:
+            Success status
+        """
+        log_function_entry(logger, "save_rider_data", {"user_id": user_id})
+        
+        try:
+            # Remove PII before saving
+            sanitized_data = self.remove_pii_from_rider_data(rider_data)
+            
+            # Generate filename with timestamp
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"fitness_data_{timestamp}.json"
+            
+            # Save to storage
+            success = self.storage_manager.save_data(sanitized_data, user_id, 'fitness', filename)
+            
+            if success:
+                logger.info(f"Successfully saved rider data for user {user_id}")
+            else:
+                logger.error(f"Failed to save rider data for user {user_id}")
+            
+            log_function_exit(logger, "save_rider_data", {"success": success})
+            return success
+            
+        except Exception as e:
+            log_error(logger, e, "Error saving rider data")
+            log_function_exit(logger, "save_rider_data", {"success": False})
+            return False
+    
+    def load_rider_data(self, user_id: str, filename: str = None) -> Optional[Dict[str, Any]]:
+        """
+        Load saved rider data for a user.
+        
+        Args:
+            user_id: Strava user ID
+            filename: Specific filename to load (optional, loads latest if not specified)
+            
+        Returns:
+            Saved rider data or None if not found
+        """
+        log_function_entry(logger, "load_rider_data", {"user_id": user_id, "filename": filename})
+        
+        try:
+            if filename:
+                # Load specific file
+                data = self.storage_manager.load_data(user_id, 'fitness', filename)
+            else:
+                # Load most recent fitness data
+                files = self.storage_manager.list_user_data(user_id, 'fitness')
+                if not files:
+                    log_function_exit(logger, "load_rider_data", {"success": False, "reason": "no_files"})
+                    return None
+                
+                # Sort by timestamp and get most recent
+                files.sort(key=lambda x: x.get('last_modified', ''), reverse=True)
+                latest_file = files[0]
+                data = self.storage_manager.load_data(user_id, 'fitness', latest_file['filename'])
+            
+            if data:
+                logger.info(f"Successfully loaded rider data for user {user_id}")
+                log_function_exit(logger, "load_rider_data", {"success": True})
+            else:
+                logger.warning(f"No rider data found for user {user_id}")
+                log_function_exit(logger, "load_rider_data", {"success": False, "reason": "not_found"})
+            
+            return data
+            
+        except Exception as e:
+            log_error(logger, e, "Error loading rider data")
+            log_function_exit(logger, "load_rider_data", {"success": False})
+            return None
+    
+    def get_rider_data_history(self, user_id: str) -> List[Dict[str, Any]]:
+        """
+        Get list of all saved rider data for a user.
+        
+        Args:
+            user_id: Strava user ID
+            
+        Returns:
+            List of available rider data files with metadata
+        """
+        log_function_entry(logger, "get_rider_data_history", {"user_id": user_id})
+        
+        try:
+            files = self.storage_manager.list_user_data(user_id, 'fitness')
+            
+            history = []
+            for file_info in files:
+                try:
+                    # Load metadata from each file
+                    data = self.storage_manager.load_data(user_id, 'fitness', file_info['filename'])
+                    if data:
+                        history_item = {
+                            'filename': file_info['filename'],
+                            'saved_at': data.get('fetch_timestamp', file_info.get('last_modified')),
+                            'anonymized': data.get('anonymization', {}).get('pii_removed', False),
+                            'size_mb': file_info.get('size_mb', 0),
+                            'activity_count': len(data.get('recent_activities', [])),
+                            'has_power_data': bool(data.get('power_analysis', {}).get('recent_power_metrics')),
+                            'completeness_score': self._quick_completeness_check(data)
+                        }
+                        history.append(history_item)
+                except Exception as e:
+                    logger.warning(f"Error loading metadata for {file_info['filename']}: {e}")
+            
+            # Sort by save date (newest first)
+            history.sort(key=lambda x: x.get('saved_at', ''), reverse=True)
+            
+            logger.info(f"Retrieved {len(history)} rider data files for user {user_id}")
+            log_function_exit(logger, "get_rider_data_history", {"success": True, "count": len(history)})
+            
+            return history
+            
+        except Exception as e:
+            log_error(logger, e, "Error getting rider data history")
+            log_function_exit(logger, "get_rider_data_history", {"success": False})
+            return []
+    
+    def _quick_completeness_check(self, rider_data: Dict[str, Any]) -> float:
+        """Quick completeness check for rider data."""
+        required_components = ["basic_info", "stats", "zones", "recent_activities", "fitness_metrics"]
+        available = sum(1 for component in required_components if rider_data.get(component))
+        return available / len(required_components)
