@@ -9,6 +9,7 @@ from typing import Dict, Optional, Any
 from .strava_oauth import StravaOAuth
 from ..config.config import get_config
 from ..config.logging_config import get_logger, log_function_entry, log_function_exit, log_error
+from ..processing.rider_data_processor import RiderDataProcessor
 
 logger = get_logger(__name__)
 
@@ -21,15 +22,18 @@ class AuthenticationManager:
         log_function_entry(logger, "__init__")
         self.config = get_config()
         self.oauth_client = None
+        self.rider_data_processor = None
         
         # Initialize OAuth client if Strava is configured
         if self.config.is_strava_configured():
             try:
                 self.oauth_client = StravaOAuth()
-                logger.info("StravaOAuth client initialized successfully")
+                self.rider_data_processor = RiderDataProcessor(self.oauth_client)
+                logger.info("StravaOAuth client and rider data processor initialized successfully")
             except Exception as e:
-                log_error(logger, e, "Failed to initialize StravaOAuth client")
+                log_error(logger, e, "Failed to initialize StravaOAuth client or rider data processor")
                 self.oauth_client = None
+                self.rider_data_processor = None
         else:
             logger.warning("Strava not configured - OAuth client not initialized")
         
@@ -58,6 +62,10 @@ class AuthenticationManager:
         if "athlete_info" not in st.session_state:
             st.session_state["athlete_info"] = None
             logger.debug("Initialized athlete_info to None")
+        
+        if "rider_fitness_data" not in st.session_state:
+            st.session_state["rider_fitness_data"] = None
+            logger.debug("Initialized rider_fitness_data to None")
         
         log_function_exit(logger, "initialize_session_state")
     
@@ -155,7 +163,7 @@ class AuthenticationManager:
         log_function_exit(logger, "handle_oauth_callback")
     
     def _fetch_athlete_info(self):
-        """Fetch and cache athlete information."""
+        """Fetch and cache athlete information and comprehensive rider data."""
         log_function_entry(logger, "_fetch_athlete_info")
         
         if not self.is_authenticated() or not self.is_oauth_configured():
@@ -164,12 +172,27 @@ class AuthenticationManager:
         
         try:
             access_token = st.session_state["access_token"]
-            athlete_info = self.oauth_client.get_athlete(access_token)
             
+            # Fetch basic athlete info (existing functionality)
+            athlete_info = self.oauth_client.get_athlete(access_token)
             st.session_state["athlete_info"] = athlete_info
             
             athlete_name = f"{athlete_info.get('firstname', '')} {athlete_info.get('lastname', '')}".strip()
             logger.info(f"Fetched athlete info for: {athlete_name or 'Unknown Athlete'}")
+            
+            # Fetch comprehensive rider fitness data (new functionality)
+            if self.rider_data_processor:
+                logger.info("Fetching comprehensive rider fitness data")
+                try:
+                    rider_data = self.rider_data_processor.fetch_comprehensive_rider_data(access_token)
+                    st.session_state["rider_fitness_data"] = rider_data
+                    logger.info("Successfully fetched and cached comprehensive rider fitness data")
+                except Exception as e:
+                    log_error(logger, e, "Failed to fetch comprehensive rider data")
+                    # Don't fail the whole authentication if rider data fails
+                    st.session_state["rider_fitness_data"] = None
+            else:
+                logger.warning("Rider data processor not available - skipping comprehensive data fetch")
             
             log_function_exit(logger, "_fetch_athlete_info", "Success")
             
@@ -177,6 +200,7 @@ class AuthenticationManager:
             log_error(logger, e, "Failed to fetch athlete information")
             # Don't logout on athlete info failure, but clear cached info
             st.session_state["athlete_info"] = None
+            st.session_state["rider_fitness_data"] = None
     
     def get_athlete_info(self) -> Optional[Dict[str, Any]]:
         """Get cached athlete information."""
@@ -191,6 +215,37 @@ class AuthenticationManager:
             athlete_info = st.session_state.get("athlete_info")
         
         return athlete_info
+    
+    def get_rider_fitness_data(self) -> Optional[Dict[str, Any]]:
+        """Get cached comprehensive rider fitness data."""
+        if not self.is_authenticated():
+            return None
+        
+        rider_data = st.session_state.get("rider_fitness_data")
+        
+        # If no cached data, try to fetch it
+        if rider_data is None:
+            self._fetch_athlete_info()  # This will fetch both athlete info and rider data
+            rider_data = st.session_state.get("rider_fitness_data")
+        
+        return rider_data
+    
+    def get_rider_ml_features(self) -> Optional[Dict[str, Any]]:
+        """Get engineered features for ML applications."""
+        if not self.is_authenticated() or not self.rider_data_processor:
+            return None
+        
+        rider_data = self.get_rider_fitness_data()
+        if not rider_data:
+            return None
+        
+        try:
+            features = self.rider_data_processor.get_feature_engineering_data(rider_data)
+            logger.info(f"Generated {len(features)} ML features for rider")
+            return features
+        except Exception as e:
+            log_error(logger, e, "Failed to generate ML features")
+            return None
     
     def refresh_access_token(self) -> bool:
         """Refresh expired access token."""
@@ -227,7 +282,7 @@ class AuthenticationManager:
         log_function_entry(logger, "logout")
         
         # Clear all authentication-related session state
-        auth_keys = ["access_token", "refresh_token", "expires_at", "authenticated", "athlete_info"]
+        auth_keys = ["access_token", "refresh_token", "expires_at", "authenticated", "athlete_info", "rider_fitness_data"]
         
         for key in auth_keys:
             if key in st.session_state:
@@ -293,6 +348,9 @@ class AuthenticationManager:
                 # Display profile picture if available
                 if athlete_info.get('profile_medium'):
                     st.image(athlete_info.get('profile_medium'), width=100, caption="Profile Picture")
+            
+            # Display rider fitness data
+            self._render_rider_fitness_data()
         
         else:
             st.warning("⚠️ Authenticated but unable to fetch athlete information")
@@ -307,6 +365,127 @@ class AuthenticationManager:
                 if st.button("🚪 Logout", type="secondary"):
                     self.logout()
                     st.rerun()
+    
+    def _render_rider_fitness_data(self):
+        """Render comprehensive rider fitness data."""
+        try:
+            rider_data = self.get_rider_fitness_data()
+            
+            if rider_data:
+                with st.expander("🏃‍♂️ Rider Fitness Data", expanded=True):
+                    st.info("📊 Comprehensive fitness data collected from your Strava profile")
+                    
+                    # Power Analysis
+                    if rider_data.get("power_analysis"):
+                        st.subheader("⚡ Power Analysis")
+                        power_analysis = rider_data["power_analysis"]
+                        
+                        col1, col2 = st.columns(2)
+                        
+                        with col1:
+                            if power_analysis.get("recent_power_metrics"):
+                                recent_power = power_analysis["recent_power_metrics"]
+                                st.metric(
+                                    "Avg Power (30 days)", 
+                                    f"{recent_power.get('avg_power_last_30_days', 0):.0f}W" if recent_power.get('avg_power_last_30_days') else "N/A"
+                                )
+                                st.metric(
+                                    "Max Power (30 days)", 
+                                    f"{recent_power.get('max_power_last_30_days', 0):.0f}W" if recent_power.get('max_power_last_30_days') else "N/A"
+                                )
+                        
+                        with col2:
+                            if power_analysis.get("lifetime_stats"):
+                                lifetime = power_analysis["lifetime_stats"]
+                                st.metric("Total Rides", f"{lifetime.get('total_rides', 0):,}")
+                                st.metric("Total Distance", f"{lifetime.get('total_distance_km', 0):.0f} km")
+                    
+                    # Fitness Metrics
+                    if rider_data.get("fitness_metrics"):
+                        st.subheader("💪 Fitness Metrics")
+                        fitness = rider_data["fitness_metrics"]
+                        
+                        col1, col2, col3 = st.columns(3)
+                        
+                        with col1:
+                            freq = fitness.get("activity_frequency", {})
+                            st.metric(
+                                "Activities/Week", 
+                                f"{freq.get('activities_per_week', 0):.1f}" if freq.get('activities_per_week') else "N/A"
+                            )
+                        
+                        with col2:
+                            st.metric(
+                                "Training Consistency", 
+                                f"{fitness.get('training_consistency', 0):.1%}"
+                            )
+                        
+                        with col3:
+                            st.metric(
+                                "Total Activities", 
+                                f"{fitness.get('total_activities', 0)}"
+                            )
+                    
+                    # Training Load
+                    if rider_data.get("training_load"):
+                        st.subheader("📈 Training Load")
+                        load = rider_data["training_load"]
+                        
+                        col1, col2 = st.columns(2)
+                        
+                        with col1:
+                            weekly_hours = load.get("weekly_training_hours", {})
+                            st.metric(
+                                "Avg Weekly Hours", 
+                                f"{weekly_hours.get('avg_weekly_hours', 0):.1f}h" if weekly_hours.get('avg_weekly_hours') else "N/A"
+                            )
+                        
+                        with col2:
+                            tsb = load.get("training_stress_balance", {})
+                            st.metric(
+                                "Training Stress Balance", 
+                                f"{tsb.get('training_stress_balance', 0):.1f}" if tsb.get('training_stress_balance') else "N/A"
+                            )
+                    
+                    # ML Features Preview
+                    ml_features = self.get_rider_ml_features()
+                    if ml_features:
+                        with st.expander("🤖 ML Features (Preview)"):
+                            st.write("Features engineered for machine learning applications:")
+                            
+                            # Display key features in a nice format
+                            feature_cols = st.columns(2)
+                            col_idx = 0
+                            
+                            for feature_name, value in ml_features.items():
+                                if value is not None:
+                                    with feature_cols[col_idx % 2]:
+                                        if isinstance(value, float):
+                                            st.write(f"**{feature_name.replace('_', ' ').title()}:** {value:.2f}")
+                                        else:
+                                            st.write(f"**{feature_name.replace('_', ' ').title()}:** {value}")
+                                    col_idx += 1
+                    
+                    # Data freshness
+                    fetch_time = rider_data.get("fetch_timestamp")
+                    if fetch_time:
+                        st.caption(f"Data last updated: {fetch_time}")
+            
+            else:
+                with st.expander("🏃‍♂️ Rider Fitness Data"):
+                    st.warning("⚠️ Rider fitness data not yet available")
+                    if st.button("🔄 Fetch Rider Data"):
+                        # Force refresh of rider data
+                        st.session_state["rider_fitness_data"] = None
+                        self._fetch_athlete_info()
+                        st.rerun()
+                    st.info("📝 This feature fetches comprehensive fitness data from your Strava profile including power metrics, training load, and fitness trends.")
+        
+        except Exception as e:
+            log_error(logger, e, "Error rendering rider fitness data")
+            with st.expander("🏃‍♂️ Rider Fitness Data"):
+                st.error("❌ Error loading rider fitness data")
+                st.exception(e)
     
     def _render_login_ui(self):
         """Render UI for login."""

@@ -144,3 +144,112 @@ class StravaOAuth:
             raise Exception(f"Failed to get athlete info: {response.status_code} - {response.text}")
         
         return response.json()
+    
+    def get_athlete_stats(self, access_token: str) -> Dict:
+        """
+        Get athlete statistics including power records and performance metrics.
+        
+        Args:
+            access_token: Valid Strava access token
+            
+        Returns:
+            Dictionary containing athlete statistics and power records
+        """
+        headers = {
+            "Authorization": f"Bearer {access_token}"
+        }
+        
+        response = requests.get(f"{self.api_base_url}/athletes/{{id}}/stats".replace("{{id}}", "authenticated"), headers=headers)
+        
+        # For the authenticated athlete, we can use the special endpoint
+        response = requests.get(f"{self.api_base_url}/athlete/stats", headers=headers)
+        
+        if response.status_code == 401:
+            raise Exception("Access token is invalid or expired")
+        elif response.status_code != 200:
+            raise Exception(f"Failed to get athlete stats: {response.status_code} - {response.text}")
+        
+        return response.json()
+    
+    def get_athlete_zones(self, access_token: str) -> Dict:
+        """
+        Get athlete power and heart rate zones.
+        
+        Args:
+            access_token: Valid Strava access token
+            
+        Returns:
+            Dictionary containing power and heart rate zones
+        """
+        headers = {
+            "Authorization": f"Bearer {access_token}"
+        }
+        
+        response = requests.get(f"{self.api_base_url}/athlete/zones", headers=headers)
+        
+        if response.status_code == 401:
+            raise Exception("Access token is invalid or expired")
+        elif response.status_code != 200:
+            raise Exception(f"Failed to get athlete zones: {response.status_code} - {response.text}")
+        
+        return response.json()
+    
+    def get_athlete_activities(self, access_token: str, page: int = 1, per_page: int = 30, after_timestamp: Optional[int] = None) -> Dict:
+        """
+        Get athlete's recent activities for fitness analysis.
+        
+        Args:
+            access_token: Valid Strava access token
+            page: Page number for pagination
+            per_page: Number of activities per page (max 200)
+            after_timestamp: Unix timestamp to get activities after this time
+            
+        Returns:
+            List of activity dictionaries
+        """
+        headers = {
+            "Authorization": f"Bearer {access_token}"
+        }
+        
+        params = {
+            "page": page,
+            "per_page": min(per_page, 200)  # Strava API limit
+        }
+        
+        if after_timestamp:
+            params["after"] = after_timestamp
+        
+        response = requests.get(f"{self.api_base_url}/athlete/activities", headers=headers, params=params)
+        
+        if response.status_code == 401:
+            raise Exception("Access token is invalid or expired")
+        elif response.status_code != 200:
+            raise Exception(f"Failed to get athlete activities: {response.status_code} - {response.text}")
+        
+        return response.json()
+    
+    def get_activity_zones(self, access_token: str, activity_id: str) -> Dict:
+        """
+        Get detailed power and heart rate zones for a specific activity.
+        
+        Args:
+            access_token: Valid Strava access token
+            activity_id: Strava activity ID
+            
+        Returns:
+            Dictionary containing activity zones data
+        """
+        headers = {
+            "Authorization": f"Bearer {access_token}"
+        }
+        
+        response = requests.get(f"{self.api_base_url}/activities/{activity_id}/zones", headers=headers)
+        
+        if response.status_code == 401:
+            raise Exception("Access token is invalid or expired")
+        elif response.status_code == 404:
+            raise Exception(f"Activity {activity_id} not found or no zones data available")
+        elif response.status_code != 200:
+            raise Exception(f"Failed to get activity zones: {response.status_code} - {response.text}")
+        
+        return response.json()
