@@ -16,8 +16,13 @@ Make sure to set your environment variables first:
 
 import os
 import sys
-from config import get_config
-from strava_oauth import StravaOAuth
+
+# Add the root directory to Python path for importing
+root_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, root_dir)
+
+from helper.config.config import get_config
+from helper.auth.strava_oauth import StravaOAuth
 
 def main():
     print("🔧 KOMpass OAuth Configuration Verification")

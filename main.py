@@ -12,10 +12,10 @@ This main module is kept minimal and clean, with heavy lifting delegated to help
 """
 
 import streamlit as st
-from logging_config import setup_logging, get_logger
-from config import get_config
-from auth_manager import get_auth_manager
-from ui_components import get_ui_components
+from helper.config.logging_config import setup_logging, get_logger
+from helper.config.config import get_config
+from helper.auth.auth_manager import get_auth_manager
+from helper.ui.ui_components import get_ui_components
 
 # Configure page settings
 st.set_page_config(

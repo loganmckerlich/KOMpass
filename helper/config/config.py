@@ -6,7 +6,7 @@ Centralizes environment variables and application settings.
 import os
 from typing import Dict, Any, Optional
 from dataclasses import dataclass
-from logging_config import get_logger
+from .logging_config import get_logger
 
 logger = get_logger(__name__)
 
@@ -33,7 +33,7 @@ class StravaConfig:
         redirect_uri = self.redirect_uri_local if is_development else self.redirect_uri_prod
         
         # Log the redirect URI being used for debugging
-        from logging_config import get_logger
+        from .logging_config import get_logger
         logger = get_logger(__name__)
         logger.info(f"Using redirect URI: {redirect_uri} (development={is_development})")
         
@@ -250,7 +250,7 @@ def get_config() -> ConfigManager:
 
 if __name__ == "__main__":
     # Test configuration loading
-    from logging_config import setup_logging
+    from .logging_config import setup_logging
     
     setup_logging("DEBUG")
     
