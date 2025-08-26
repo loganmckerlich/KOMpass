@@ -14,6 +14,11 @@ from math import radians, cos, sin, asin, sqrt, atan2, degrees
 import numpy as np
 import requests
 import time
+try:
+    from fitparse import FitFile
+    FIT_SUPPORT = True
+except ImportError:
+    FIT_SUPPORT = False
 
 
 def haversine_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -444,9 +449,9 @@ class RouteProcessor:
         traffic_lights = infrastructure.get('traffic_lights', [])
         major_roads = infrastructure.get('major_roads', [])
         
-        # Find traffic lights near route points
+        # Find traffic lights near route points - reduce threshold for better accuracy
         nearby_traffic_lights = []
-        traffic_light_threshold = 0.05  # ~50m in degrees
+        traffic_light_threshold = 0.025  # Reduced from 50m to 25m for better accuracy
         
         for route_point in route_points:
             for light in traffic_lights:
@@ -455,8 +460,8 @@ class RouteProcessor:
                     light['lat'], light['lon']
                 )
                 
-                # If within 50 meters, consider it a potential stop
-                if distance <= 0.05:  # 50m in km
+                # If within 25 meters, consider it a potential stop
+                if distance <= traffic_light_threshold:
                     nearby_traffic_lights.append({
                         'route_point_index': route_points.index(route_point),
                         'route_lat': route_point['lat'],
@@ -467,12 +472,17 @@ class RouteProcessor:
                         'tags': light.get('tags', {})
                     })
         
-        # Find major road crossings
+        # Find major road crossings - reduce threshold and be more selective
         major_road_crossings = []
-        crossing_threshold = 0.02  # ~20m
+        crossing_threshold = 0.015  # Reduced from 20m to 15m
         
         for road in major_roads:
             road_geometry = road.get('geometry', [])
+            highway_type = road.get('highway_type', 'unknown')
+            
+            # Only consider major roads that typically require stops
+            if highway_type not in ['motorway', 'trunk', 'primary', 'secondary']:
+                continue
             
             for route_point in route_points:
                 # Check if route point is close to any segment of the major road
@@ -553,10 +563,10 @@ class RouteProcessor:
             
             # Remove duplicates (same intersection counted multiple times)
             unique_traffic_lights = self._remove_duplicate_stops(
-                intersections['traffic_light_intersections'], threshold_m=100
+                intersections['traffic_light_intersections'], threshold_m=75  # Increased for traffic lights
             )
             unique_major_crossings = self._remove_duplicate_stops(
-                intersections['major_road_crossings'], threshold_m=50
+                intersections['major_road_crossings'], threshold_m=30  # Reduced for road crossings
             )
             
             unique_total_stops = len(unique_traffic_lights) + len(unique_major_crossings)
@@ -712,6 +722,121 @@ class RouteProcessor:
             
         except Exception as e:
             raise ValueError(f"Error parsing GPX file: {str(e)}")
+    
+    def parse_fit_file(self, fit_content: bytes) -> Dict:
+        """Parse FIT file content and extract route data.
+        
+        Args:
+            fit_content: Bytes content of the FIT file
+            
+        Returns:
+            Dictionary containing parsed route data
+        """
+        if not FIT_SUPPORT:
+            raise ValueError("FIT file support not available. Please install fitparse library.")
+        
+        try:
+            # Create a temporary file to parse
+            import tempfile
+            with tempfile.NamedTemporaryFile(delete=False, suffix='.fit') as tmp_file:
+                tmp_file.write(fit_content)
+                tmp_file.flush()
+                
+                fitfile = FitFile(tmp_file.name)
+                
+                route_data = {
+                    'metadata': {},
+                    'tracks': [],
+                    'routes': [],
+                    'waypoints': []
+                }
+                
+                points = []
+                track_name = "FIT Activity"
+                
+                # Process record messages (GPS points)
+                for record in fitfile.get_messages('record'):
+                    lat = None
+                    lon = None
+                    elevation = None
+                    timestamp = None
+                    
+                    for field in record:
+                        if field.name == 'position_lat':
+                            lat = field.value * (180.0 / 2**31) if field.value else None
+                        elif field.name == 'position_long':
+                            lon = field.value * (180.0 / 2**31) if field.value else None
+                        elif field.name == 'altitude':
+                            elevation = field.value
+                        elif field.name == 'timestamp':
+                            timestamp = field.value
+                    
+                    # Only add points with valid GPS coordinates
+                    if lat is not None and lon is not None:
+                        point_data = {
+                            'lat': lat,
+                            'lon': lon,
+                            'elevation': elevation,
+                            'time': timestamp.isoformat() if timestamp else None
+                        }
+                        points.append(point_data)
+                
+                # Get activity info if available
+                for file_id in fitfile.get_messages('file_id'):
+                    for field in file_id:
+                        if field.name == 'time_created':
+                            route_data['metadata']['time'] = field.value.isoformat() if field.value else None
+                
+                # Get session info for metadata
+                for session in fitfile.get_messages('session'):
+                    for field in session:
+                        if field.name == 'start_time':
+                            route_data['metadata']['start_time'] = field.value.isoformat() if field.value else None
+                        elif field.name == 'sport':
+                            route_data['metadata']['sport'] = field.value
+                
+                # Add points as a track
+                if points:
+                    track_data = {
+                        'name': track_name,
+                        'segments': [points]
+                    }
+                    route_data['tracks'].append(track_data)
+                    route_data['metadata']['name'] = track_name
+                    route_data['metadata']['description'] = f"FIT file with {len(points)} GPS points"
+                
+                # Clean up temp file
+                os.unlink(tmp_file.name)
+                
+                return route_data
+                
+        except Exception as e:
+            raise ValueError(f"Error parsing FIT file: {str(e)}")
+    
+    def parse_route_file(self, file_content: bytes, filename: str) -> Dict:
+        """Parse route file content (GPX or FIT) and extract route data.
+        
+        Args:
+            file_content: File content as bytes
+            filename: Original filename to determine file type
+            
+        Returns:
+            Dictionary containing parsed route data
+        """
+        file_extension = filename.lower().split('.')[-1]
+        
+        if file_extension == 'gpx':
+            try:
+                gpx_content = file_content.decode('utf-8')
+                return self.parse_gpx_file(gpx_content)
+            except UnicodeDecodeError:
+                raise ValueError("Invalid GPX file: Unable to decode as UTF-8")
+        
+        elif file_extension == 'fit':
+            return self.parse_fit_file(file_content)
+        
+        else:
+            raise ValueError(f"Unsupported file type: {file_extension}. Supported types: GPX, FIT")
     
     def calculate_route_statistics(self, route_data: Dict) -> Dict:
         """Calculate comprehensive statistics for the route including ML-ready features.
