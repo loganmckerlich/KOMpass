@@ -234,34 +234,39 @@ class AuthenticationManager:
         
         logger.info("User logged out - session state cleared")
         log_function_exit(logger, "logout")
-    
-    def render_authentication_ui(self):
-        """Render authentication UI components."""
-        log_function_entry(logger, "render_authentication_ui")
+
+    def _render_login_ui(self):
+        """Render UI for login."""
+        auth_url = self.get_authorization_url()
         
-        if not self.is_oauth_configured():
-            st.error("⚠️ Strava API not configured")
-            st.info("Please check your Strava API configuration in environment variables.")
-            
-            with st.expander("🔧 Configuration Help"):
+        if auth_url:
+            # Debug log + visible display
+            logger.debug(f"Generated Strava auth URL: {auth_url}")
+            with st.expander("🔍 Debug: Authorization URL"):
+                st.code(auth_url, language="text")
+
+            # Safe Streamlit button (no escaping issues)
+            st.link_button("🚴 Connect with Strava", auth_url)
+
+            st.info("👆 Click the button above to authorize KOMpass to access your Strava data.")
+
+            # Instructions
+            with st.expander("ℹ️ What happens when you connect?"):
                 st.markdown("""
-                **Required Environment Variables:**
-                - `STRAVA_CLIENT_ID`: Your Strava application client ID
-                - `STRAVA_CLIENT_SECRET`: Your Strava application client secret
-                
-                **Optional Environment Variables:**
-                - `STRAVA_REDIRECT_URI_DEV`: Development redirect URI (default: http://localhost:8501)
-                - `STRAVA_REDIRECT_URI_PROD`: Production redirect URI (default: https://kompass-dev.streamlit.app)
+                1. You'll be redirected to Strava's authorization page
+                2. You'll need to log in to Strava (if not already logged in)
+                3. You'll be asked to authorize KOMpass to access your data
+                4. After authorization, you'll be redirected back here
+                5. Your athlete information will be displayed
+
+                **We only request permission to read your basic profile and activity data.**
+
+                **Data Privacy:** Your data stays secure and is only used within this application.
                 """)
-            return
-        
-        if self.is_authenticated():
-            self._render_authenticated_ui()
         else:
-            self._render_login_ui()
-        
-        log_function_exit(logger, "render_authentication_ui")
-    
+            st.error("❌ Unable to generate authorization URL")
+            st.info("Please check the application configuration.")
+
     def _render_authenticated_ui(self):
         """Render UI for authenticated users."""
         athlete_info = self.get_athlete_info()
