@@ -6,6 +6,9 @@ import os
 import requests
 import urllib.parse
 from typing import Dict, Optional
+from logging_config import get_logger
+
+logger = get_logger(__name__)
 
 
 class StravaOAuth:
@@ -49,8 +52,8 @@ class StravaOAuth:
         auth_url = f"{self.authorization_base_url}?{query_string}"
         
         # Log for debugging OAuth issues
-        print(f"DEBUG: Generated authorization URL with redirect_uri: {redirect_uri}")
-        print(f"DEBUG: Full authorization URL: {auth_url}")
+        logger.debug(f"Generated authorization URL with redirect_uri: {redirect_uri}")
+        logger.debug(f"Full authorization URL: {auth_url}")
         
         return auth_url
     
@@ -69,16 +72,17 @@ class StravaOAuth:
             "client_id": self.client_id,
             "client_secret": self.client_secret,
             "code": authorization_code,
-            "grant_type": "authorization_code"
+            "grant_type": "authorization_code",
+            "redirect_uri": redirect_uri
         }
         
-        print(f"DEBUG: Exchanging code for token with redirect_uri: {redirect_uri}")
+        logger.debug(f"Exchanging code for token with redirect_uri: {redirect_uri}")
         
         response = requests.post(self.token_url, data=data)
         
         if response.status_code != 200:
             error_msg = f"Token exchange failed: {response.status_code} - {response.text}"
-            print(f"DEBUG: Token exchange error: {error_msg}")
+            logger.error(f"Token exchange error: {error_msg}")
             
             # Provide specific guidance for common OAuth errors
             if response.status_code == 400:
