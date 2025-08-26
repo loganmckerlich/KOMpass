@@ -85,8 +85,11 @@ class RouteProcessor:
         self.overpass_url = "https://overpass-api.de/api/interpreter"
         self.request_delay = 1.0  # Seconds between API requests to be respectful
     
-    def _analyze_gradients(self, points: List[Dict]) -> Dict:
-        """Analyze gradient characteristics of the route."""
+    @st.cache_data(ttl=7200)  # Cache for 2 hours
+    def _analyze_gradients(_self, points_hash: str, points: List[Dict]) -> Dict:
+        """Analyze gradient characteristics of the route.
+        Cached for performance as gradient analysis is computationally expensive.
+        """
         if len(points) < 2:
             return {}
         
@@ -130,8 +133,11 @@ class RouteProcessor:
             'segments': segments
         }
     
-    def _analyze_climbs(self, points: List[Dict]) -> Dict:
-        """Analyze climbing segments and characteristics."""
+    @st.cache_data(ttl=7200)  # Cache for 2 hours
+    def _analyze_climbs(_self, points_hash: str, points: List[Dict]) -> Dict:
+        """Analyze climbing segments and characteristics.
+        Cached for performance as climb analysis is computationally expensive.
+        """
         if len(points) < 2:
             return {}
         
@@ -202,8 +208,11 @@ class RouteProcessor:
         # Difficulty = distance * gradient^2 (emphasizes steep sections)
         return distance_km * (avg_gradient ** 2) / 100
     
-    def _analyze_route_complexity(self, points: List[Dict]) -> Dict:
-        """Analyze route complexity based on direction changes and curvature."""
+    @st.cache_data(ttl=7200)  # Cache for 2 hours
+    def _analyze_route_complexity(_self, points_hash: str, points: List[Dict]) -> Dict:
+        """Analyze route complexity based on direction changes and curvature.
+        Cached for performance as complexity analysis involves many calculations.
+        """
         if len(points) < 3:
             return {}
         
@@ -247,8 +256,11 @@ class RouteProcessor:
             'complexity_score': round(np.sum(direction_changes) / len(points), 2)
         }
     
-    def _classify_terrain_type(self, gradient_analysis: Dict) -> Dict:
-        """Classify terrain type based on gradient characteristics for ML features."""
+    @st.cache_data(ttl=3600)  # Cache terrain classification for 1 hour
+    def _classify_terrain_type(_self, gradient_hash: str, gradient_analysis: Dict) -> Dict:
+        """Classify terrain type based on gradient characteristics for ML features.
+        Cached for performance as it's called frequently.
+        """
         if not gradient_analysis:
             return {}
         
@@ -740,10 +752,13 @@ class RouteProcessor:
         except Exception as e:
             raise ValueError(f"Error parsing GPX file: {str(e)}")
     
-    def parse_route_file(self, file_content: bytes, filename: str) -> Dict:
+    @st.cache_data(ttl=7200)  # Cache for 2 hours
+    def parse_route_file(_self, file_content_hash: str, file_content: bytes, filename: str) -> Dict:
         """Parse route file content (GPX only) and extract route data.
+        Cached for performance as GPX parsing can be expensive for large files.
         
         Args:
+            file_content_hash: Hash of file content for caching
             file_content: File content as bytes
             filename: Original filename to determine file type
             
@@ -761,11 +776,13 @@ class RouteProcessor:
         else:
             raise ValueError(f"Unsupported file type: {file_extension}. Only GPX files are supported.")
     
-    @st.cache_data(ttl=3600)  # Cache route statistics for 1 hour
-    def calculate_route_statistics(_self, route_data: Dict, include_traffic_analysis: bool = False) -> Dict:
+    @st.cache_data(ttl=7200)  # Cache route statistics for 2 hours
+    def calculate_route_statistics(_self, route_data_hash: str, route_data: Dict, include_traffic_analysis: bool = False) -> Dict:
         """Calculate comprehensive statistics for the route including ML-ready features.
+        Cached for performance as route statistics calculation is computationally expensive.
         
         Args:
+            route_data_hash: Hash of route data for caching
             route_data: Parsed route data dictionary
             include_traffic_analysis: Whether to include traffic stop analysis (slow)
             
@@ -841,20 +858,24 @@ class RouteProcessor:
         
         # Advanced ML-ready metrics (always calculated)
         if len(all_points) >= 2:
+            # Create hash for caching based on points data
+            points_hash = hashlib.md5(str([(p['lat'], p['lon'], p.get('elevation')) for p in all_points]).encode()).hexdigest()
+            
             # Gradient analysis
-            gradient_analysis = _self._analyze_gradients(all_points)
+            gradient_analysis = _self._analyze_gradients(points_hash, all_points)
             stats['gradient_analysis'] = gradient_analysis
             
             # Climbing analysis
-            climb_analysis = _self._analyze_climbs(all_points)
+            climb_analysis = _self._analyze_climbs(points_hash, all_points)
             stats['climb_analysis'] = climb_analysis
             
             # Route complexity analysis
-            complexity_analysis = _self._analyze_route_complexity(all_points)
+            complexity_analysis = _self._analyze_route_complexity(points_hash, all_points)
             stats['complexity_analysis'] = complexity_analysis
             
             # Terrain classification for ML features
-            terrain_analysis = _self._classify_terrain_type(gradient_analysis)
+            gradient_hash = hashlib.md5(str(gradient_analysis).encode()).hexdigest()
+            terrain_analysis = _self._classify_terrain_type(gradient_hash, gradient_analysis)
             stats['terrain_analysis'] = terrain_analysis
             
             # Power requirements analysis for ML features
@@ -905,10 +926,20 @@ class RouteProcessor:
         
         return stats
     
-    def create_analysis_dataframe(self, route_data: Dict, stats: Dict) -> pd.DataFrame:
+    @st.cache_data(ttl=7200)  # Cache dataframe creation for 2 hours as it's expensive
+    def create_analysis_dataframe(_self, route_data_hash: str, route_data: Dict, stats: Dict) -> pd.DataFrame:
         """Create a structured DataFrame with all route analysis data.
+        Cached for performance as dataframe creation is computationally expensive.
         
         Args:
+            route_data_hash: Hash of route data for caching
+            route_data: Route data dictionary
+            stats: Route statistics dictionary
+            
+        Returns:
+            Pandas DataFrame with comprehensive route analysis
+            
+        Note: Uses leading underscore on self to exclude from caching key
             route_data: Parsed route data
             stats: Route statistics
             
@@ -992,10 +1023,13 @@ class RouteProcessor:
         return df
     
     @st.cache_resource(ttl=3600)  # Cache maps for 1 hour
-    def create_route_map(_self, route_data: Dict, stats: Dict) -> folium.Map:
+    @st.cache_data(ttl=7200)  # Cache maps for 2 hours  
+    def create_route_map(_self, route_data_hash: str, route_data: Dict, stats: Dict) -> folium.Map:
         """Create a folium map visualization of the route.
+        Cached for performance as map generation is expensive.
         
         Args:
+            route_data_hash: Hash of route data for caching
             route_data: Parsed route data
             stats: Route statistics
             

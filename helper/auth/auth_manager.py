@@ -668,13 +668,11 @@ class AuthenticationManager:
                 """)
 
 
-# Global authentication manager instance
-auth_manager = AuthenticationManager()
-
-
+# Global authentication manager instance cached as resource
+@st.cache_resource  # Cache auth manager instance as it's expensive to initialize  
 def get_auth_manager() -> AuthenticationManager:
     """Get the global authentication manager instance."""
-    return auth_manager
+    return AuthenticationManager()
 
 
 if __name__ == "__main__":
