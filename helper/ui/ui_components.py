@@ -666,6 +666,9 @@ class UIComponents:
         """Render comprehensive route analysis."""
         log_function_entry(logger, "_render_route_analysis", filename=filename)
         
+        # Automatically perform all advanced analysis for this route
+        stats = self._ensure_comprehensive_analysis(route_data, stats, filename)
+        
         # Basic route statistics (always shown)
         self._render_basic_stats(stats)
         
@@ -673,75 +676,32 @@ class UIComponents:
         if stats.get('gradient_analysis'):
             self._render_gradient_analysis(stats['gradient_analysis'])
         
-        # Show key summary stats only
-        st.subheader("📋 Route Summary")
-        col1, col2, col3 = st.columns(3)
-        
-        gradient_analysis = stats.get('gradient_analysis', {})
-        with col1:
-            terrain_type = self._get_simple_terrain_type(gradient_analysis)
-            st.metric("Terrain Type", terrain_type)
-            if gradient_analysis.get('average_gradient_percent'):
-                st.metric("Avg Gradient", f"{gradient_analysis.get('average_gradient_percent', 0)}%")
-        
-        with col2:
-            if gradient_analysis.get('steep_climbs_percent'):
-                st.metric("Steep Sections", f"{gradient_analysis.get('steep_climbs_percent', 0)}%")
-            if gradient_analysis.get('max_gradient_percent'):
-                st.metric("Max Gradient", f"{gradient_analysis.get('max_gradient_percent', 0)}%")
-        
-        with col3:
-            # Calculate a simple difficulty score
-            difficulty = self._calculate_simple_difficulty(stats, gradient_analysis)
-            st.metric("Difficulty Rating", difficulty)
-            if stats.get('total_points'):
-                point_density = stats['total_points'] / max(stats.get('total_distance_km', 1), 0.1)
-                st.metric("Route Detail", f"{point_density:.0f} pts/km")
-        
-        # Add hill detection and route complexity explanations
-        with st.expander("🔍 Analysis Methodology", expanded=False):
-            self._render_analysis_methodology()
+        # High-level KPIs prominently displayed
+        self._render_route_kpis(stats, route_data)
         
         # Elevation profile graph
         if route_data and self._has_elevation_data(route_data):
             st.subheader("📊 Elevation Profile")
             self._render_elevation_graph(route_data, stats)
         
-        # Advanced analysis options (expandable)
-        with st.expander("🔬 Advanced Analysis", expanded=False):
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                # Option to enable traffic analysis
-                if st.button("🚦 Analyze Traffic Stops", help="Analyze potential traffic lights and road crossings (may take 10-30 seconds)"):
-                    self._perform_traffic_analysis(route_data, stats, filename)
-            
-            with col2:
-                # Option to generate detailed dataframe
-                if st.button("📊 Generate Detailed Analysis", help="Create comprehensive dataframe with all route data"):
-                    self._generate_detailed_dataframe(route_data, stats)
+        # Advanced analysis - now always visible with key metrics
+        st.subheader("🔬 Advanced Route Analysis")
         
-        # Show detailed metrics if they exist
+        # Show key climbing metrics if they exist
         if stats.get('climb_analysis') and stats['climb_analysis'].get('climb_count', 0) > 0:
-            with st.expander("🚴‍♂️ Detailed Climbing Analysis", expanded=False):
-                self._render_climb_analysis(stats['climb_analysis'])
+            self._render_climb_analysis(stats['climb_analysis'])
         
+        # Show route complexity metrics
         if stats.get('complexity_analysis'):
-            with st.expander("🛣️ Route Complexity Analysis", expanded=False):
-                self._render_complexity_analysis(stats['complexity_analysis'], stats.get('ml_features', {}))
+            self._render_complexity_analysis(stats['complexity_analysis'], stats.get('ml_features', {}))
         
+        # Show terrain analysis
         if stats.get('terrain_analysis'):
-            with st.expander("🏔️ Terrain Analysis", expanded=False):
-                self._render_terrain_analysis(stats['terrain_analysis'], {})
+            self._render_terrain_analysis(stats['terrain_analysis'], {})
         
+        # Show traffic analysis results
         if stats.get('traffic_analysis', {}).get('analysis_available'):
-            with st.expander("🚦 Traffic Analysis Results", expanded=True):
-                self._render_traffic_analysis(stats['traffic_analysis'])
-        
-        # ML features are now hidden as requested - data still collected for backend ML use
-        # if stats.get('ml_features'):
-        #     with st.expander("🤖 ML Features & Advanced Metrics", expanded=False):
-        #         self._render_ml_features(stats['ml_features'])
+            self._render_traffic_analysis(stats['traffic_analysis'])
         
         # Automatically generate and cache comprehensive dataframe for ML use
         try:
@@ -766,10 +726,132 @@ class UIComponents:
         # Route visualization
         self._render_route_visualization(route_data, stats)
         
+        # Analysis methodology info
+        with st.expander("🔍 Analysis Methodology", expanded=False):
+            self._render_analysis_methodology()
+        
         # Save route option
         self._render_save_route_section(route_data, stats)
         
         log_function_exit(logger, "_render_route_analysis")
+    
+    def _ensure_comprehensive_analysis(self, route_data: Dict, stats: Dict, filename: str) -> Dict:
+        """Ensure all comprehensive analysis is performed automatically."""
+        log_function_entry(logger, "_ensure_comprehensive_analysis", filename=filename)
+        
+        # Check if we need to perform traffic analysis
+        if not stats.get('traffic_analysis', {}).get('analysis_available'):
+            try:
+                with st.spinner("Performing comprehensive route analysis..."):
+                    # Re-calculate with traffic analysis enabled
+                    route_data_hash = hashlib.md5(str(route_data).encode()).hexdigest()
+                    stats = self.route_processor.calculate_route_statistics(
+                        route_data_hash,
+                        route_data, 
+                        include_traffic_analysis=True
+                    )
+                    logger.info("Traffic analysis completed automatically")
+            except Exception as e:
+                log_error(logger, e, "Error performing automatic traffic analysis")
+                # Continue with existing stats if traffic analysis fails
+                
+        # Ensure detailed dataframe is automatically generated and cached
+        try:
+            route_data_hash = hashlib.md5(str(route_data).encode()).hexdigest()
+            df = self.route_processor.create_analysis_dataframe(route_data_hash, route_data, stats)
+            
+            if not df.empty:
+                # Cache the dataframe for ML use
+                route_name = route_data.get('metadata', {}).get('name', filename)
+                cache_key = f"analysis_dataframe_{route_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+                st.session_state[cache_key] = df
+                st.session_state['latest_analysis_dataframe'] = df
+                logger.info(f"Comprehensive dataframe automatically cached with {len(df)} points")
+        except Exception as e:
+            log_error(logger, e, "Error generating automatic comprehensive dataframe")
+        
+        # Perform automatic weather analysis with default "now" start time
+        self._perform_automatic_weather_analysis(route_data, stats)
+        
+        return stats
+    
+    def _render_route_kpis(self, stats: Dict, route_data: Dict):
+        """Render high-level key performance indicators prominently."""
+        st.subheader("📋 Route Key Metrics")
+        
+        # Main KPI row
+        col1, col2, col3, col4 = st.columns(4)
+        
+        gradient_analysis = stats.get('gradient_analysis', {})
+        with col1:
+            terrain_type = self._get_simple_terrain_type(gradient_analysis)
+            st.metric("Terrain Type", terrain_type)
+            if gradient_analysis.get('average_gradient_percent'):
+                st.metric("Avg Gradient", f"{gradient_analysis.get('average_gradient_percent', 0)}%")
+        
+        with col2:
+            difficulty = self._calculate_simple_difficulty(stats, gradient_analysis)
+            st.metric("Difficulty Rating", difficulty)
+            if gradient_analysis.get('steep_climbs_percent'):
+                st.metric("Steep Sections", f"{gradient_analysis.get('steep_climbs_percent', 0)}%")
+        
+        with col3:
+            # Traffic and complexity metrics
+            traffic_analysis = stats.get('traffic_analysis', {})
+            if traffic_analysis.get('analysis_available'):
+                traffic_lights = traffic_analysis.get('traffic_lights_count', 0)
+                st.metric("Traffic Lights", traffic_lights)
+            
+            complexity_analysis = stats.get('complexity_analysis', {})
+            if complexity_analysis:
+                complexity_score = complexity_analysis.get('complexity_score', 0)
+                st.metric("Complexity Score", f"{complexity_score}")
+        
+        with col4:
+            # Route detail and point density
+            if stats.get('total_points'):
+                point_density = stats['total_points'] / max(stats.get('total_distance_km', 1), 0.1)
+                st.metric("Route Detail", f"{point_density:.0f} pts/km")
+            
+            # Weather condition if available
+            weather_analysis = getattr(st.session_state, 'latest_weather_analysis', {})
+            if weather_analysis.get('analysis_available'):
+                wind_data = weather_analysis.get('wind_analysis', {})
+                if wind_data.get('analysis_available'):
+                    avg_wind = wind_data.get('avg_headwind_component_kmh', 0)
+                    wind_label = "Tailwind" if avg_wind < 0 else "Headwind"
+                    st.metric(f"Avg {wind_label}", f"{abs(avg_wind):.1f} km/h")
+    
+    def _perform_automatic_weather_analysis(self, route_data: Dict, stats: Dict):
+        """Perform automatic weather analysis with default 'now' start time."""
+        try:
+            # Use current time as default departure time
+            departure_datetime = datetime.now()
+            
+            # Collect all route points
+            all_points = []
+            for track in route_data.get('tracks', []):
+                for segment in track.get('segments', []):
+                    all_points.extend(segment)
+            for route in route_data.get('routes', []):
+                all_points.extend(route.get('points', []))
+            
+            if all_points:
+                # Get comprehensive weather analysis with default timing
+                route_points_hash = hashlib.md5(str([(p['lat'], p['lon']) for p in all_points]).encode()).hexdigest()
+                weather_analysis = self.weather_analyzer.get_comprehensive_weather_analysis(
+                    route_points_hash, all_points, departure_datetime, 2.0  # Default 2-hour duration estimate
+                )
+                
+                # Cache weather analysis for display in KPIs
+                st.session_state['latest_weather_analysis'] = weather_analysis
+                
+                if weather_analysis.get('analysis_available'):
+                    logger.info("Automatic weather analysis completed successfully")
+                else:
+                    logger.info(f"Weather analysis unavailable: {weather_analysis.get('reason', 'Unknown')}")
+        except Exception as e:
+            log_error(logger, e, "Error performing automatic weather analysis")
     
     def _get_simple_terrain_type(self, gradient_analysis: Dict) -> str:
         """Get a simple terrain classification."""
@@ -1254,35 +1336,45 @@ class UIComponents:
     
     @st.fragment  # Independent fragment for weather analysis input
     def _render_weather_analysis_section(self, route_data: Dict, stats: Dict):
-        """Render weather analysis section as an independent fragment."""
-        st.subheader("🌤️ Weather Analysis & Planning")
+        """Render weather analysis section - now shows automatic analysis with option to customize timing."""
+        st.subheader("🌤️ Weather Analysis")
         
-        # Weather input controls
-        col1, col2 = st.columns(2)
+        # Show automatic weather analysis results
+        weather_analysis = getattr(st.session_state, 'latest_weather_analysis', {})
         
-        with col1:
-            departure_date = st.date_input(
-                "Planned Departure Date",
-                value=datetime.now().date(),
-                min_value=datetime.now().date(),
-                max_value=datetime.now().date() + timedelta(days=self.config.weather.max_forecast_days),
-                help=f"Weather forecasts are available up to {self.config.weather.max_forecast_days} days in advance"
-            )
-        
-        with col2:
-            departure_time = st.time_input(
-                "Planned Departure Time",
-                value=datetime.now().time().replace(minute=0, second=0, microsecond=0),
-                help="Enter your planned start time"
-            )
-        
-        departure_datetime = datetime.combine(departure_date, departure_time)
-        
-        # Weather analysis button
-        if st.button("🌤️ Analyze Weather Conditions"):
-            self._process_weather_analysis(route_data, departure_datetime)
+        if weather_analysis.get('analysis_available'):
+            st.success("✅ Weather analysis completed automatically for current conditions")
+            self._render_weather_results(weather_analysis)
         else:
-            st.info("📅 Select your departure date and time above, then click 'Analyze Weather Conditions' to get detailed weather forecasts for your ride.")
+            # Show basic info if automatic analysis failed
+            error_reason = weather_analysis.get('reason', 'Analysis not available')
+            st.info(f"ℹ️ Automatic weather analysis: {error_reason}")
+        
+        # Optional: Allow user to customize timing
+        with st.expander("⚙️ Customize Weather Timing", expanded=False):
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                departure_date = st.date_input(
+                    "Planned Departure Date",
+                    value=datetime.now().date(),
+                    min_value=datetime.now().date(),
+                    max_value=datetime.now().date() + timedelta(days=self.config.weather.max_forecast_days),
+                    help=f"Weather forecasts are available up to {self.config.weather.max_forecast_days} days in advance"
+                )
+            
+            with col2:
+                departure_time = st.time_input(
+                    "Planned Departure Time",
+                    value=datetime.now().time().replace(minute=0, second=0, microsecond=0),
+                    help="Enter your planned start time"
+                )
+            
+            departure_datetime = datetime.combine(departure_date, departure_time)
+            
+            # Custom weather analysis button
+            if st.button("🌤️ Analyze Weather for Custom Time"):
+                self._process_weather_analysis(route_data, departure_datetime)
     
     @log_execution_time()
     def _process_weather_analysis(self, route_data: Dict, departure_datetime: datetime):
@@ -1311,6 +1403,8 @@ class UIComponents:
                 
                 if weather_analysis.get('analysis_available'):
                     self._render_weather_results(weather_analysis)
+                    # Update the cached weather analysis
+                    st.session_state['latest_weather_analysis'] = weather_analysis
                 else:
                     error_reason = weather_analysis.get('reason', 'Unknown error')
                     st.warning(f"⚠️ Weather analysis unavailable: {error_reason}")
@@ -1325,10 +1419,9 @@ class UIComponents:
                 st.error(f"❌ Error analyzing weather: {str(e)}")
     
     def _render_weather_results(self, weather_analysis: Dict):
-        """Render weather analysis results."""
-        st.success("✅ Weather analysis completed!")
+        """Render weather analysis results - now always visible."""
         
-        # Display key weather metrics
+        # Display key weather metrics prominently
         col1, col2, col3, col4 = st.columns(4)
         
         # Wind analysis
@@ -1359,21 +1452,34 @@ class UIComponents:
                 )
                 st.metric("Heat Stress Periods", f"{temp_data.get('high_heat_periods', 0)}")
         
-        # Weather recommendations
+        # Weather recommendations prominently displayed
         recommendations = weather_analysis.get('recommendations', [])
         if recommendations:
-            st.subheader("🎯 Weather Recommendations")
-            for rec in recommendations:
-                if "warning" in rec.lower() or "extreme" in rec.lower() or "high chance" in rec.lower():
-                    st.warning(rec)
-                elif "good" in rec.lower() or "favorable" in rec.lower():
-                    st.success(rec)
-                else:
-                    st.info(rec)
+            with col4:
+                st.write("**Weather Alerts:**")
+                for rec in recommendations[:2]:  # Show first 2 recommendations prominently
+                    if "warning" in rec.lower() or "extreme" in rec.lower() or "high chance" in rec.lower():
+                        st.warning(f"⚠️ {rec[:50]}...")
+                    elif "good" in rec.lower() or "favorable" in rec.lower():
+                        st.success(f"✅ {rec[:50]}...")
+                    else:
+                        st.info(f"ℹ️ {rec[:50]}...")
         
-        # Detailed weather breakdown in expander
-        with st.expander("📊 Detailed Weather Analysis"):
+        # Detailed weather breakdown - now always visible
+        if any([wind_data.get('analysis_available'), rain_data.get('analysis_available'), temp_data.get('analysis_available')]):
+            st.subheader("📊 Detailed Weather Conditions")
             self._render_detailed_weather_breakdown(wind_data, rain_data, temp_data)
+        
+        # Full recommendations list if more than 2
+        if len(recommendations) > 2:
+            with st.expander("📋 All Weather Recommendations"):
+                for rec in recommendations:
+                    if "warning" in rec.lower() or "extreme" in rec.lower() or "high chance" in rec.lower():
+                        st.warning(rec)
+                    elif "good" in rec.lower() or "favorable" in rec.lower():
+                        st.success(rec)
+                    else:
+                        st.info(rec)
     
     def _render_detailed_weather_breakdown(self, wind_data: Dict, rain_data: Dict, temp_data: Dict):
         """Render detailed weather breakdown."""

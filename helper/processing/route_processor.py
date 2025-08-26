@@ -777,7 +777,7 @@ class RouteProcessor:
             raise ValueError(f"Unsupported file type: {file_extension}. Only GPX files are supported.")
     
     @st.cache_data(ttl=7200)  # Cache route statistics for 2 hours
-    def calculate_route_statistics(_self, route_data_hash: str, route_data: Dict, include_traffic_analysis: bool = False) -> Dict:
+    def calculate_route_statistics(_self, route_data_hash: str, route_data: Dict, include_traffic_analysis: bool = True) -> Dict:
         """Calculate comprehensive statistics for the route including ML-ready features.
         Cached for performance as route statistics calculation is computationally expensive.
         
