@@ -76,12 +76,12 @@ class StorageManager:
         Returns:
             Success status
         """
-        log_function_entry(logger, "save_data", {
-            "user_id": user_id, 
-            "data_type": data_type, 
-            "filename": filename,
-            "backend": "s3" if self.is_s3_enabled() else "local"
-        })
+        log_function_entry(logger, "save_data", 
+            user_id=user_id, 
+            data_type=data_type, 
+            filename=filename,
+            backend="s3" if self.is_s3_enabled() else "local"
+        )
         
         success = False
         
@@ -90,7 +90,7 @@ class StorageManager:
             success = self.s3_backend.save_file(data, user_id, data_type, filename)
             if success:
                 logger.info(f"Data saved to S3: {data_type}/{filename}")
-                log_function_exit(logger, "save_data", {"success": True, "backend": "s3"})
+                log_function_exit(logger, "save_data", "success-s3")
                 return True
             else:
                 logger.warning("S3 save failed, falling back to local storage")
@@ -104,7 +104,7 @@ class StorageManager:
         else:
             logger.error(f"Failed to save data: {data_type}/{filename}")
         
-        log_function_exit(logger, "save_data", {"success": success, "backend": backend})
+        log_function_exit(logger, "save_data", f"success={success}, backend={backend}")
         return success
     
     def _save_local(self, data: Any, user_id: Optional[str], data_type: str, filename: str) -> bool:
@@ -144,18 +144,18 @@ class StorageManager:
         Returns:
             Loaded data or None if not found
         """
-        log_function_entry(logger, "load_data", {
-            "user_id": user_id, 
-            "data_type": data_type, 
-            "filename": filename
-        })
+        log_function_entry(logger, "load_data", 
+            user_id=user_id, 
+            data_type=data_type, 
+            filename=filename
+        )
         
         # Try S3 first if enabled
         if self.is_s3_enabled():
             data = self.s3_backend.load_file(user_id, data_type, filename)
             if data is not None:
                 logger.debug(f"Data loaded from S3: {data_type}/{filename}")
-                log_function_exit(logger, "load_data", {"success": True, "backend": "s3"})
+                log_function_exit(logger, "load_data", "success=True, backend=s3")
                 return data
         
         # Fallback to local storage
@@ -167,7 +167,7 @@ class StorageManager:
         else:
             logger.debug(f"Data not found: {data_type}/{filename}")
         
-        log_function_exit(logger, "load_data", {"success": data is not None, "backend": backend})
+        log_function_exit(logger, "load_data", f"success={data is not None}, backend={backend}")
         return data
     
     def _load_local(self, user_id: Optional[str], data_type: str, filename: str) -> Optional[Any]:
@@ -206,7 +206,7 @@ class StorageManager:
         Returns:
             List of file information
         """
-        log_function_entry(logger, "list_user_data", {"user_id": user_id, "data_type": data_type})
+        log_function_entry(logger, "list_user_data", user_id=user_id, data_type=data_type)
         
         files = []
         
@@ -227,7 +227,7 @@ class StorageManager:
         result = list(file_dict.values())
         result.sort(key=lambda x: x.get('last_modified', ''), reverse=True)
         
-        log_function_exit(logger, "list_user_data", {"success": True, "count": len(result)})
+        log_function_exit(logger, "list_user_data", f"success=True, count={len(result)}")
         return result
     
     def _list_local_files(self, user_id: Optional[str], data_type: str) -> List[Dict[str, Any]]:
@@ -269,11 +269,11 @@ class StorageManager:
         Returns:
             Success status
         """
-        log_function_entry(logger, "delete_data", {
-            "user_id": user_id, 
-            "data_type": data_type, 
-            "filename": filename
-        })
+        log_function_entry(logger, "delete_data", 
+            user_id=user_id, 
+            data_type=data_type, 
+            filename=filename
+        )
         
         success = True
         
@@ -294,7 +294,7 @@ class StorageManager:
             local_success
         )
         
-        log_function_exit(logger, "delete_data", {"success": overall_success})
+        log_function_exit(logger, "delete_data", f"success={overall_success}")
         return overall_success
     
     def _delete_local(self, user_id: Optional[str], data_type: str, filename: str) -> bool:
@@ -338,7 +338,7 @@ class StorageManager:
         Returns:
             Storage usage information
         """
-        log_function_entry(logger, "get_user_storage_usage", {"user_id": user_id})
+        log_function_entry(logger, "get_user_storage_usage", user_id=user_id)
         
         usage = {
             "user_id": user_id,
@@ -359,10 +359,10 @@ class StorageManager:
             usage["backends"]["local"] = local_usage
             usage["total_size_mb"] += local_usage.get("total_size_mb", 0)
         
-        log_function_exit(logger, "get_user_storage_usage", {
-            "success": True, 
-            "total_size_mb": usage["total_size_mb"]
-        })
+        log_function_exit(logger, "get_user_storage_usage", 
+            success=True, 
+            total_size_mb=usage["total_size_mb"]
+        )
         return usage
     
     def _get_local_storage_usage(self, user_id: str) -> Dict[str, Any]:

@@ -106,7 +106,7 @@ class S3StorageBackend:
         Returns:
             Success status
         """
-        log_function_entry(logger, "save_file", {"user_id": user_id, "data_type": data_type, "filename": filename})
+        log_function_entry(logger, "save_file", user_id=user_id, data_type=data_type, filename=filename)
         
         if not self.is_available():
             logger.error("S3 storage not available")
@@ -154,12 +154,12 @@ class S3StorageBackend:
             )
             
             logger.info(f"Successfully saved file to S3: {key} ({size_mb:.2f}MB)")
-            log_function_exit(logger, "save_file", {"success": True, "key": key})
+            log_function_exit(logger, "save_file", f"success=True, key=key")
             return True
             
         except Exception as e:
             logger.error(f"Failed to save file to S3: {e}")
-            log_function_exit(logger, "save_file", {"success": False, "error": str(e)})
+            log_function_exit(logger, "save_file", f"success=False, error={str(e)}")
             return False
     
     def load_file(self, user_id: Optional[str], data_type: str, filename: str) -> Optional[Any]:
@@ -174,7 +174,7 @@ class S3StorageBackend:
         Returns:
             Loaded data or None if not found
         """
-        log_function_entry(logger, "load_file", {"user_id": user_id, "data_type": data_type, "filename": filename})
+        log_function_entry(logger, "load_file", user_id=user_id, data_type=data_type, filename=filename)
         
         if not self.is_available():
             logger.error("S3 storage not available")
@@ -200,7 +200,7 @@ class S3StorageBackend:
                 data = content  # Return as bytes
             
             logger.debug(f"Successfully loaded file from S3: {key}")
-            log_function_exit(logger, "load_file", {"success": True, "key": key})
+            log_function_exit(logger, "load_file", f"success=True, key=key")
             return data
             
         except ClientError as e:
@@ -209,11 +209,11 @@ class S3StorageBackend:
                 logger.debug(f"File not found in S3: {self._build_key(user_id, data_type, filename)}")
             else:
                 logger.error(f"Failed to load file from S3: {e}")
-            log_function_exit(logger, "load_file", {"success": False, "error": error_code})
+            log_function_exit(logger, "load_file", f"success={False}, error={error_code}")
             return None
         except Exception as e:
             logger.error(f"Failed to load file from S3: {e}")
-            log_function_exit(logger, "load_file", {"success": False, "error": str(e)})
+            log_function_exit(logger, "load_file", f"success=False, error={str(e)}")
             return None
     
     def list_files(self, user_id: Optional[str], data_type: str) -> List[Dict[str, Any]]:
@@ -227,7 +227,7 @@ class S3StorageBackend:
         Returns:
             List of file information
         """
-        log_function_entry(logger, "list_files", {"user_id": user_id, "data_type": data_type})
+        log_function_entry(logger, "list_files", user_id=user_id, data_type=data_type)
         
         if not self.is_available():
             logger.error("S3 storage not available")
@@ -255,12 +255,12 @@ class S3StorageBackend:
                     })
             
             logger.debug(f"Listed {len(files)} files from S3 prefix: {prefix}")
-            log_function_exit(logger, "list_files", {"success": True, "count": len(files)})
+            log_function_exit(logger, "list_files", f"success=True, count=len(files")
             return files
             
         except Exception as e:
             logger.error(f"Failed to list files from S3: {e}")
-            log_function_exit(logger, "list_files", {"success": False, "error": str(e)})
+            log_function_exit(logger, "list_files", f"success=False, error={str(e)}")
             return []
     
     def delete_file(self, user_id: Optional[str], data_type: str, filename: str) -> bool:
@@ -275,7 +275,7 @@ class S3StorageBackend:
         Returns:
             Success status
         """
-        log_function_entry(logger, "delete_file", {"user_id": user_id, "data_type": data_type, "filename": filename})
+        log_function_entry(logger, "delete_file", user_id=user_id, data_type=data_type, filename=filename)
         
         if not self.is_available():
             logger.error("S3 storage not available")
@@ -290,12 +290,12 @@ class S3StorageBackend:
             )
             
             logger.info(f"Successfully deleted file from S3: {key}")
-            log_function_exit(logger, "delete_file", {"success": True, "key": key})
+            log_function_exit(logger, "delete_file", f"success=True, key=key")
             return True
             
         except Exception as e:
             logger.error(f"Failed to delete file from S3: {e}")
-            log_function_exit(logger, "delete_file", {"success": False, "error": str(e)})
+            log_function_exit(logger, "delete_file", f"success=False, error={str(e)}")
             return False
     
     def get_user_storage_usage(self, user_id: str) -> Dict[str, Any]:
@@ -308,7 +308,7 @@ class S3StorageBackend:
         Returns:
             Storage usage information
         """
-        log_function_entry(logger, "get_user_storage_usage", {"user_id": user_id})
+        log_function_entry(logger, "get_user_storage_usage", user_id=user_id)
         
         if not self.is_available():
             logger.error("S3 storage not available")
@@ -350,10 +350,10 @@ class S3StorageBackend:
             }
             
             logger.debug(f"User storage usage: {usage_info['total_size_mb']}MB / {usage_info['limit_mb']}MB")
-            log_function_exit(logger, "get_user_storage_usage", {"success": True, "usage_mb": usage_info['total_size_mb']})
+            log_function_exit(logger, "get_user_storage_usage", f"success=True, usage_mb={usage_info['total_size_mb']}")
             return usage_info
             
         except Exception as e:
             logger.error(f"Failed to get user storage usage: {e}")
-            log_function_exit(logger, "get_user_storage_usage", {"success": False, "error": str(e)})
+            log_function_exit(logger, "get_user_storage_usage", f"success=False, error={str(e)}")
             return {}

@@ -2216,13 +2216,13 @@ class RiderDataProcessor:
             }
             
             logger.info("Successfully removed PII from rider data")
-            log_function_exit(logger, "remove_pii_from_rider_data", {"success": True})
+            log_function_exit(logger, "remove_pii_from_rider_data", f"success={True}")
             
             return sanitized_data
             
         except Exception as e:
             log_error(logger, e, "Error removing PII from rider data")
-            log_function_exit(logger, "remove_pii_from_rider_data", {"success": False})
+            log_function_exit(logger, "remove_pii_from_rider_data", f"success={False}")
             return rider_data
     
     def save_rider_data(self, rider_data: Dict[str, Any], user_id: str) -> bool:
@@ -2236,7 +2236,7 @@ class RiderDataProcessor:
         Returns:
             Success status
         """
-        log_function_entry(logger, "save_rider_data", {"user_id": user_id})
+        log_function_entry(logger, "save_rider_data", user_id=user_id)
         
         try:
             # Remove PII before saving
@@ -2254,12 +2254,12 @@ class RiderDataProcessor:
             else:
                 logger.error(f"Failed to save rider data for user {user_id}")
             
-            log_function_exit(logger, "save_rider_data", {"success": success})
+            log_function_exit(logger, "save_rider_data", f"success={success}")
             return success
             
         except Exception as e:
             log_error(logger, e, "Error saving rider data")
-            log_function_exit(logger, "save_rider_data", {"success": False})
+            log_function_exit(logger, "save_rider_data", f"success={False}")
             return False
     
     def load_rider_data(self, user_id: str, filename: str = None) -> Optional[Dict[str, Any]]:
@@ -2273,7 +2273,7 @@ class RiderDataProcessor:
         Returns:
             Saved rider data or None if not found
         """
-        log_function_entry(logger, "load_rider_data", {"user_id": user_id, "filename": filename})
+        log_function_entry(logger, "load_rider_data", user_id=user_id, filename=filename)
         
         try:
             if filename:
@@ -2283,7 +2283,7 @@ class RiderDataProcessor:
                 # Load most recent fitness data
                 files = self.storage_manager.list_user_data(user_id, 'fitness')
                 if not files:
-                    log_function_exit(logger, "load_rider_data", {"success": False, "reason": "no_files"})
+                    log_function_exit(logger, "load_rider_data", f"success={False}, reason={"no_files"}")
                     return None
                 
                 # Sort by timestamp and get most recent
@@ -2293,16 +2293,16 @@ class RiderDataProcessor:
             
             if data:
                 logger.info(f"Successfully loaded rider data for user {user_id}")
-                log_function_exit(logger, "load_rider_data", {"success": True})
+                log_function_exit(logger, "load_rider_data", f"success={True}")
             else:
                 logger.warning(f"No rider data found for user {user_id}")
-                log_function_exit(logger, "load_rider_data", {"success": False, "reason": "not_found"})
+                log_function_exit(logger, "load_rider_data", f"success={False}, reason={"not_found"}")
             
             return data
             
         except Exception as e:
             log_error(logger, e, "Error loading rider data")
-            log_function_exit(logger, "load_rider_data", {"success": False})
+            log_function_exit(logger, "load_rider_data", f"success={False}")
             return None
     
     def get_rider_data_history(self, user_id: str) -> List[Dict[str, Any]]:
@@ -2315,7 +2315,7 @@ class RiderDataProcessor:
         Returns:
             List of available rider data files with metadata
         """
-        log_function_entry(logger, "get_rider_data_history", {"user_id": user_id})
+        log_function_entry(logger, "get_rider_data_history", user_id=user_id)
         
         try:
             files = self.storage_manager.list_user_data(user_id, 'fitness')
@@ -2343,13 +2343,13 @@ class RiderDataProcessor:
             history.sort(key=lambda x: x.get('saved_at', ''), reverse=True)
             
             logger.info(f"Retrieved {len(history)} rider data files for user {user_id}")
-            log_function_exit(logger, "get_rider_data_history", {"success": True, "count": len(history)})
+            log_function_exit(logger, "get_rider_data_history", f"success=True, count={len(history)}")
             
             return history
             
         except Exception as e:
             log_error(logger, e, "Error getting rider data history")
-            log_function_exit(logger, "get_rider_data_history", {"success": False})
+            log_function_exit(logger, "get_rider_data_history", f"success={False}")
             return []
     
     def _quick_completeness_check(self, rider_data: Dict[str, Any]) -> float:
