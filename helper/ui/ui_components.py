@@ -164,7 +164,7 @@ class UIComponents:
     @st.fragment  # Independent fragment for navigation sidebar
     def render_navigation_sidebar(self) -> str:
         """Render streamlined navigation sidebar as an independent fragment."""
-        st.sidebar.markdown("### 🧭 Navigate")
+        st.markdown("### 🧭 Navigate")
         
         page_options = {
             "🏠 Dashboard": "Home",
@@ -173,16 +173,16 @@ class UIComponents:
             "🏃‍♂️ Rider Fitness": "Rider Fitness"
         }
         
-        selected_display = st.sidebar.selectbox("Page Navigation", list(page_options.keys()), label_visibility="collapsed")
+        selected_display = st.selectbox("Page Navigation", list(page_options.keys()), label_visibility="collapsed")
         selected_page = page_options[selected_display]
         
         # Settings section
-        st.sidebar.markdown("---")
-        st.sidebar.markdown("### ⚙️ Settings")
+        st.markdown("---")
+        st.markdown("### ⚙️ Settings")
         
         # Unit toggle (CSS toggle moved to header)
-        st.sidebar.markdown("### ⚖️ Units")
-        use_imperial = st.sidebar.toggle(
+        st.markdown("### ⚖️ Units")
+        use_imperial = st.toggle(
             "Imperial (mi/ft)", 
             key="use_imperial_units",
             help="Switch between metric and imperial units"

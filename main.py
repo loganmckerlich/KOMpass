@@ -56,7 +56,8 @@ def main():
         ui_components.render_app_header()
         
         # Navigation and page rendering
-        selected_page = ui_components.render_navigation_sidebar()
+        with st.sidebar:
+            selected_page = ui_components.render_navigation_sidebar()
         logger.debug(f"User navigated to page: {selected_page}")
         
         # Route to appropriate page
