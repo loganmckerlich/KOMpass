@@ -367,7 +367,7 @@ class AuthenticationManager:
                     st.rerun()
     
     def _render_rider_fitness_data(self):
-        """Render comprehensive rider fitness data."""
+        """Render comprehensive rider fitness data with advanced metrics."""
         try:
             rider_data = self.get_rider_fitness_data()
             
@@ -375,101 +375,232 @@ class AuthenticationManager:
                 with st.expander("🏃‍♂️ Rider Fitness Data", expanded=True):
                     st.info("📊 Comprehensive fitness data collected from your Strava profile")
                     
-                    # Power Analysis
-                    if rider_data.get("power_analysis"):
-                        st.subheader("⚡ Power Analysis")
-                        power_analysis = rider_data["power_analysis"]
-                        
-                        col1, col2 = st.columns(2)
-                        
-                        with col1:
-                            if power_analysis.get("recent_power_metrics"):
-                                recent_power = power_analysis["recent_power_metrics"]
-                                st.metric(
-                                    "Avg Power (30 days)", 
-                                    f"{recent_power.get('avg_power_last_30_days', 0):.0f}W" if recent_power.get('avg_power_last_30_days') else "N/A"
-                                )
-                                st.metric(
-                                    "Max Power (30 days)", 
-                                    f"{recent_power.get('max_power_last_30_days', 0):.0f}W" if recent_power.get('max_power_last_30_days') else "N/A"
-                                )
-                        
-                        with col2:
-                            if power_analysis.get("lifetime_stats"):
-                                lifetime = power_analysis["lifetime_stats"]
-                                st.metric("Total Rides", f"{lifetime.get('total_rides', 0):,}")
-                                st.metric("Total Distance", f"{lifetime.get('total_distance_km', 0):.0f} km")
+                    # Create tabs for different metric categories
+                    tab1, tab2, tab3, tab4, tab5 = st.tabs([
+                        "⚡ Power & Performance", 
+                        "🎯 Zone Analysis", 
+                        "📈 Advanced Metrics", 
+                        "🏁 Distance Performance",
+                        "🤖 ML Features"
+                    ])
                     
-                    # Fitness Metrics
-                    if rider_data.get("fitness_metrics"):
-                        st.subheader("💪 Fitness Metrics")
-                        fitness = rider_data["fitness_metrics"]
-                        
-                        col1, col2, col3 = st.columns(3)
-                        
-                        with col1:
-                            freq = fitness.get("activity_frequency", {})
-                            st.metric(
-                                "Activities/Week", 
-                                f"{freq.get('activities_per_week', 0):.1f}" if freq.get('activities_per_week') else "N/A"
-                            )
-                        
-                        with col2:
-                            st.metric(
-                                "Training Consistency", 
-                                f"{fitness.get('training_consistency', 0):.1%}"
-                            )
-                        
-                        with col3:
-                            st.metric(
-                                "Total Activities", 
-                                f"{fitness.get('total_activities', 0)}"
-                            )
-                    
-                    # Training Load
-                    if rider_data.get("training_load"):
-                        st.subheader("📈 Training Load")
-                        load = rider_data["training_load"]
-                        
-                        col1, col2 = st.columns(2)
-                        
-                        with col1:
-                            weekly_hours = load.get("weekly_training_hours", {})
-                            st.metric(
-                                "Avg Weekly Hours", 
-                                f"{weekly_hours.get('avg_weekly_hours', 0):.1f}h" if weekly_hours.get('avg_weekly_hours') else "N/A"
-                            )
-                        
-                        with col2:
-                            tsb = load.get("training_stress_balance", {})
-                            st.metric(
-                                "Training Stress Balance", 
-                                f"{tsb.get('training_stress_balance', 0):.1f}" if tsb.get('training_stress_balance') else "N/A"
-                            )
-                    
-                    # ML Features Preview
-                    ml_features = self.get_rider_ml_features()
-                    if ml_features:
-                        with st.expander("🤖 ML Features (Preview)"):
-                            st.write("Features engineered for machine learning applications:")
+                    with tab1:
+                        # Power Analysis
+                        if rider_data.get("power_analysis"):
+                            st.subheader("⚡ Power Analysis")
+                            power_analysis = rider_data["power_analysis"]
                             
-                            # Display key features in a nice format
-                            feature_cols = st.columns(2)
-                            col_idx = 0
+                            col1, col2 = st.columns(2)
                             
-                            for feature_name, value in ml_features.items():
-                                if value is not None:
-                                    with feature_cols[col_idx % 2]:
+                            with col1:
+                                st.markdown("**Recent Performance (30 days)**")
+                                if power_analysis.get("recent_power_metrics"):
+                                    recent_power = power_analysis["recent_power_metrics"]
+                                    st.metric(
+                                        "Avg Power", 
+                                        f"{recent_power.get('avg_power_last_30_days', 0):.0f}W" if recent_power.get('avg_power_last_30_days') else "N/A"
+                                    )
+                                    st.metric(
+                                        "Max Power", 
+                                        f"{recent_power.get('max_power_last_30_days', 0):.0f}W" if recent_power.get('max_power_last_30_days') else "N/A"
+                                    )
+                                    
+                                    trend = recent_power.get('power_trend', {})
+                                    trend_icon = "📈" if trend.get('trend_direction') == "improving" else "📉"
+                                    st.metric(
+                                        f"Power Trend {trend_icon}",
+                                        f"{trend.get('trend_direction', 'Unknown').title()}"
+                                    )
+                            
+                            with col2:
+                                st.markdown("**Lifetime Statistics**")
+                                if power_analysis.get("lifetime_stats"):
+                                    lifetime = power_analysis["lifetime_stats"]
+                                    st.metric("Total Rides", f"{lifetime.get('total_rides', 0):,}")
+                                    st.metric("Total Distance", f"{lifetime.get('total_distance_km', 0):.0f} km")
+                                    st.metric("Total Elevation", f"{lifetime.get('total_elevation_gain_m', 0):,.0f} m")
+                        
+                        # Critical Power Curve
+                        if rider_data.get("advanced_metrics", {}).get("critical_power_curve"):
+                            st.subheader("🔥 Critical Power Analysis")
+                            cp_curve = rider_data["advanced_metrics"]["critical_power_curve"]
+                            
+                            col1, col2, col3 = st.columns(3)
+                            
+                            with col1:
+                                if cp_curve.get("critical_power_watts"):
+                                    st.metric("Critical Power", f"{cp_curve['critical_power_watts']:.0f}W")
+                            
+                            with col2:
+                                if cp_curve.get("w_prime_joules"):
+                                    st.metric("W' (Anaerobic Capacity)", f"{cp_curve['w_prime_joules']:.0f}J")
+                            
+                            with col3:
+                                classification = cp_curve.get("performance_classification", "Unknown")
+                                st.metric("Performance Level", classification)
+                        
+                        # VO2 Max Estimation
+                        if rider_data.get("advanced_metrics", {}).get("vo2_max_estimation"):
+                            st.subheader("🫁 VO2 Max Estimation")
+                            vo2_data = rider_data["advanced_metrics"]["vo2_max_estimation"]
+                            
+                            col1, col2 = st.columns(2)
+                            
+                            with col1:
+                                if vo2_data.get("vo2_max_average"):
+                                    st.metric("Estimated VO2 Max", f"{vo2_data['vo2_max_average']:.1f} ml/kg/min")
+                            
+                            with col2:
+                                classification = vo2_data.get("vo2_classification", "Unknown")
+                                st.metric("VO2 Classification", classification)
+                    
+                    with tab2:
+                        # Zone Speed Predictions (Logan's key requirement!)
+                        if rider_data.get("power_zone_analysis", {}).get("zone_speed_predictions"):
+                            st.subheader("🚀 Zone Speed Predictions")
+                            st.info("⏱️ Estimated ride times at different power zones - perfect for planning efforts!")
+                            
+                            speed_preds = rider_data["power_zone_analysis"]["zone_speed_predictions"]
+                            
+                            # Display zone predictions in a nice format
+                            for zone_key, zone_data in speed_preds.items():
+                                if zone_key.startswith("zone_") and isinstance(zone_data, dict):
+                                    with st.expander(f"🎯 {zone_data.get('zone_name', zone_key)} - {zone_data.get('power_range_watts', 'N/A')}"):
+                                        
+                                        col1, col2 = st.columns(2)
+                                        
+                                        with col1:
+                                            st.metric("Predicted Speed", f"{zone_data.get('predicted_speed_kmh', 0):.1f} km/h")
+                                            st.metric("Confidence", zone_data.get('confidence_level', 'Unknown'))
+                                        
+                                        with col2:
+                                            st.metric("Mid Power", f"{zone_data.get('mid_power_watts', 0):.0f}W")
+                                            st.metric("Calibration Rides", f"{zone_data.get('calibration_rides', 0)}")
+                                        
+                                        # Distance time predictions
+                                        if zone_data.get("distance_time_predictions"):
+                                            st.markdown("**Estimated Ride Times:**")
+                                            time_preds = zone_data["distance_time_predictions"]
+                                            
+                                            pred_cols = st.columns(min(3, len(time_preds)))
+                                            for i, (distance, pred_data) in enumerate(time_preds.items()):
+                                                if i < len(pred_cols):
+                                                    with pred_cols[i]:
+                                                        st.metric(
+                                                            distance, 
+                                                            pred_data.get('estimated_time_formatted', 'N/A')
+                                                        )
+                            
+                            # Model quality info
+                            if speed_preds.get("model_info"):
+                                model_info = speed_preds["model_info"]
+                                st.caption(f"📊 Based on {model_info.get('total_calibration_rides', 0)} calibration rides. "
+                                         f"Data quality: {model_info.get('data_quality', 'Unknown')}")
+                    
+                    with tab3:
+                        # Advanced Metrics
+                        if rider_data.get("advanced_metrics"):
+                            advanced = rider_data["advanced_metrics"]
+                            
+                            # Power Profile Classification
+                            if advanced.get("power_profile"):
+                                st.subheader("🏆 Power Profile Classification")
+                                profile = advanced["power_profile"]
+                                
+                                col1, col2 = st.columns(2)
+                                
+                                with col1:
+                                    classification = profile.get("classification", "Unknown")
+                                    st.metric("Rider Type", classification)
+                                
+                                with col2:
+                                    if profile.get("sprint_to_ftp_ratio"):
+                                        st.metric("Sprint:FTP Ratio", f"{profile['sprint_to_ftp_ratio']:.2f}")
+                                
+                                if profile.get("strengths"):
+                                    st.markdown("**Key Strengths:**")
+                                    for strength in profile["strengths"]:
+                                        st.markdown(f"• {strength}")
+                            
+                            # Training Stress Analysis
+                            if advanced.get("training_stress"):
+                                st.subheader("📊 Training Stress Analysis")
+                                stress = advanced["training_stress"]
+                                
+                                col1, col2, col3 = st.columns(3)
+                                
+                                with col1:
+                                    if stress.get("current_ctl"):
+                                        st.metric("CTL (Chronic Load)", f"{stress['current_ctl']:.0f}")
+                                
+                                with col2:
+                                    if stress.get("current_atl"):
+                                        st.metric("ATL (Acute Load)", f"{stress['current_atl']:.0f}")
+                                
+                                with col3:
+                                    if stress.get("current_tsb"):
+                                        tsb = stress["current_tsb"]
+                                        color = "🟢" if tsb > 10 else "🟡" if tsb > -10 else "🔴"
+                                        st.metric(f"TSB {color}", f"{tsb:.0f}")
+                                
+                                if stress.get("tsb_interpretation"):
+                                    st.info(f"💡 {stress['tsb_interpretation']}")
+                    
+                    with tab4:
+                        # Distance-Specific Performance
+                        if rider_data.get("performance_profile"):
+                            st.subheader("🏁 Distance-Specific Performance")
+                            distance_perf = rider_data["performance_profile"]
+                            
+                            # Performance comparison
+                            if distance_perf.get("performance_comparison"):
+                                comparison = distance_perf["performance_comparison"]
+                                
+                                col1, col2 = st.columns(2)
+                                
+                                with col1:
+                                    if comparison.get("strongest_distance"):
+                                        strongest = comparison["strongest_distance"].replace("_", " ").title()
+                                        st.metric("Strongest Distance", strongest)
+                                
+                                with col2:
+                                    if comparison.get("power_decay_percentage"):
+                                        decay = comparison["power_decay_percentage"]
+                                        st.metric("Power Decay", f"{decay:.1f}%")
+                                
+                                if comparison.get("endurance_profile"):
+                                    st.info(f"🏃‍♂️ **Endurance Profile:** {comparison['endurance_profile']}")
+                    
+                    with tab5:
+                        # ML Features Preview
+                        st.subheader("🤖 ML Features Preview")
+                        features = self.get_rider_ml_features()
+                        
+                        if features:
+                            st.info(f"🎯 Generated {len(features)} features for machine learning applications")
+                            
+                            # Show key features
+                            key_features = [
+                                "recent_avg_power", "critical_power_watts", "estimated_vo2_max",
+                                "power_performance_score", "endurance_performance_score", "overall_performance_index"
+                            ]
+                            
+                            feature_cols = st.columns(3)
+                            for i, feature_name in enumerate(key_features):
+                                if feature_name in features and features[feature_name] is not None:
+                                    with feature_cols[i % 3]:
+                                        value = features[feature_name]
                                         if isinstance(value, float):
-                                            st.write(f"**{feature_name.replace('_', ' ').title()}:** {value:.2f}")
+                                            st.metric(feature_name.replace('_', ' ').title(), f"{value:.1f}")
                                         else:
-                                            st.write(f"**{feature_name.replace('_', ' ').title()}:** {value}")
-                                    col_idx += 1
+                                            st.metric(feature_name.replace('_', ' ').title(), f"{value}")
+                        else:
+                            st.warning("⚠️ ML features not available")
                     
                     # Data freshness
                     fetch_time = rider_data.get("fetch_timestamp")
                     if fetch_time:
-                        st.caption(f"Data last updated: {fetch_time}")
+                        st.caption(f"📅 Data last updated: {fetch_time}")
             
             else:
                 with st.expander("🏃‍♂️ Rider Fitness Data"):
