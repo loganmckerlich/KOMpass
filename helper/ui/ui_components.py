@@ -726,6 +726,10 @@ class UIComponents:
         # Route visualization
         self._render_route_visualization(route_data, stats)
         
+        # Analysis methodology info
+        with st.expander("🔍 Analysis Methodology", expanded=False):
+            self._render_analysis_methodology()
+        
         # Save route option
         self._render_save_route_section(route_data, stats)
         
