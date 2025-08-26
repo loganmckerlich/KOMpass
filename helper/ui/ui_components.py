@@ -161,9 +161,8 @@ class UIComponents:
             log_error(logger, e, "Error reading README.md")
             return f"Error reading README.md: {e}"
     
-    @st.fragment  # Independent fragment for navigation sidebar
     def render_navigation_sidebar(self) -> str:
-        """Render streamlined navigation sidebar as an independent fragment."""
+        """Render streamlined navigation sidebar."""
         st.markdown("### 🧭 Navigate")
         
         page_options = {
@@ -290,18 +289,11 @@ class UIComponents:
         </div>
         """, unsafe_allow_html=True)
         
-        # Create radio button selection for upload method
-        st.markdown("### 🎯 Choose Route Source")
-        upload_method = st.radio(
-            "Select how you want to add a route:",
-            ["📁 Upload GPX File", "🚴 Select from Recent Strava Rides"],
-            help="Choose between uploading a file from your device or selecting from your recent Strava activities"
-        )
+        # Show both options simultaneously
+        col1, col2 = st.columns(2)
         
-        st.markdown("---")
-        
-        if upload_method == "📁 Upload GPX File":
-            st.markdown("### Upload GPX File")
+        with col1:
+            st.markdown("### 📁 Upload GPX File")
             # File upload widget - GPX only
             uploaded_file = st.file_uploader(
                 "Choose a GPX file",
@@ -314,8 +306,8 @@ class UIComponents:
             else:
                 st.info("📂 Select a GPX file above to begin route analysis.")
         
-        else:  # Strava rides selection
-            st.markdown("### Select from Recent Strava Rides")
+        with col2:
+            st.markdown("### 🚴 Select from Recent Strava Rides")
             self._render_strava_routes_section()
         
         log_function_exit(logger, "render_route_upload_page")
@@ -433,17 +425,58 @@ class UIComponents:
         
         st.success(f"✅ Found {len(ride_activities)} recent rides from Strava!")
         
-        # Create selection interface
+        # Create dropdown selection instead of expanders
         st.markdown("**Select a ride to analyze:**")
         
-        # Display rides in a more compact format
+        # Create options for selectbox
+        ride_options = []
         for i, activity in enumerate(ride_activities):
-            self._render_strava_activity_item(activity, i)
+            # Get unit preference for display
+            use_imperial = getattr(st.session_state, 'use_imperial', False)
+            
+            # Extract activity data
+            name = activity.get('name', 'Unnamed Ride')
+            distance_m = activity.get('distance', 0)
+            distance_km = distance_m / 1000
+            elevation_gain = activity.get('total_elevation_gain', 0)
+            activity_date = activity.get('start_date_local', '').split('T')[0] if activity.get('start_date_local') else 'Unknown date'
+            
+            # Format units for display
+            distance_str = UnitConverter.format_distance(distance_km, use_imperial)
+            elevation_str = UnitConverter.format_elevation(elevation_gain, use_imperial)
+            
+            # Create display text for the option
+            display_text = f"{name} - {distance_str}, {elevation_str} ({activity_date})"
+            ride_options.append(display_text)
+        
+        # Add a default "Select a ride" option
+        ride_options.insert(0, "-- Select a ride to analyze --")
+        
+        # Create selectbox for ride selection
+        selected_option = st.selectbox(
+            "Choose a ride:",
+            ride_options,
+            key="strava_ride_selector"
+        )
+        
+        # Process the selected ride if a valid selection is made
+        if selected_option != "-- Select a ride to analyze --":
+            # Find the selected ride by index (subtract 1 for the default option)
+            selected_index = ride_options.index(selected_option) - 1
+            if 0 <= selected_index < len(ride_activities):
+                selected_activity = ride_activities[selected_index]
+                
+                # Show activity details before analysis
+                self._render_selected_activity_details(selected_activity)
+                
+                # Auto-process the selected activity
+                if st.button("📊 Analyze This Ride", key="analyze_selected_strava"):
+                    self._process_strava_activity(selected_activity)
         
         log_function_exit(logger, "_render_strava_routes_section", "Success")
     
-    def _render_strava_activity_item(self, activity: Dict, index: int):
-        """Render a single Strava activity item for selection."""
+    def _render_selected_activity_details(self, activity: Dict):
+        """Render details of the selected Strava activity."""
         # Get unit preference
         use_imperial = getattr(st.session_state, 'use_imperial', False)
         
@@ -465,30 +498,38 @@ class UIComponents:
         minutes = (moving_time % 3600) // 60
         duration_str = f"{hours:02d}:{minutes:02d}" if hours > 0 else f"{minutes} min"
         
-        # Create expandable item
-        with st.expander(f"🚴 {name} - {distance_str} ({activity_date})"):
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                st.write(f"**Distance:** {distance_str}")
-                st.write(f"**Elevation Gain:** {elevation_str}")
-                st.write(f"**Duration:** {duration_str}")
-            
-            with col2:
-                st.write(f"**Date:** {activity_date}")
-                st.write(f"**Type:** {activity.get('type', 'Ride')}")
-                if activity.get('average_speed'):
-                    avg_speed_ms = activity['average_speed']
-                    avg_speed_kmh = avg_speed_ms * 3.6
-                    speed_str = f"{avg_speed_kmh:.1f} km/h"
-                    if use_imperial:
-                        avg_speed_mph = avg_speed_kmh * 0.621371
-                        speed_str = f"{avg_speed_mph:.1f} mph"
-                    st.write(f"**Avg Speed:** {speed_str}")
-            
-            # Analyze button
-            if st.button(f"📊 Analyze This Ride", key=f"analyze_strava_{index}"):
-                self._process_strava_activity(activity)
+        # Display activity details in a compact format
+        st.markdown(f"**Selected: {name}**")
+        
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.write(f"**Distance:** {distance_str}")
+            st.write(f"**Date:** {activity_date}")
+        
+        with col2:
+            st.write(f"**Elevation:** {elevation_str}")
+            st.write(f"**Duration:** {duration_str}")
+        
+        with col3:
+            st.write(f"**Type:** {activity.get('type', 'Ride')}")
+            if activity.get('average_speed'):
+                avg_speed_ms = activity['average_speed']
+                avg_speed_kmh = avg_speed_ms * 3.6
+                speed_str = f"{avg_speed_kmh:.1f} km/h"
+                if use_imperial:
+                    avg_speed_mph = avg_speed_kmh * 0.621371
+                    speed_str = f"{avg_speed_mph:.1f} mph"
+                st.write(f"**Avg Speed:** {speed_str}")
+    
+    def _render_strava_activity_item(self, activity: Dict, index: int):
+        """Render a single Strava activity item for selection.
+        
+        NOTE: This method is now deprecated in favor of dropdown selection.
+        Keeping for backward compatibility but should not be used.
+        """
+        # This method is kept for compatibility but is no longer used
+        # since we switched to dropdown selection
+        pass
     
     def _process_strava_activity(self, activity: Dict):
         """Process and analyze a selected Strava activity."""

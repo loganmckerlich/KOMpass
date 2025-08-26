@@ -179,7 +179,7 @@ class RouteProcessor:
                     if current_climb['elevation_gain_m'] > 10:  # Only count significant climbs
                         current_climb['end_elevation'] = curr_point['elevation']
                         current_climb['average_gradient'] = (current_climb['elevation_gain_m'] / current_climb['distance_m']) * 100
-                        current_climb['difficulty_score'] = self._calculate_climb_difficulty(current_climb)
+                        current_climb['difficulty_score'] = _self._calculate_climb_difficulty(current_climb)
                         climbs.append(current_climb)
                     current_climb = None
         
@@ -770,7 +770,7 @@ class RouteProcessor:
         if file_extension == 'gpx':
             try:
                 gpx_content = file_content.decode('utf-8')
-                return self.parse_gpx_file(gpx_content)
+                return _self.parse_gpx_file(gpx_content)
             except UnicodeDecodeError:
                 raise ValueError("Invalid GPX file: Unable to decode as UTF-8")
         else:
