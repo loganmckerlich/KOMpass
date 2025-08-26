@@ -289,17 +289,26 @@ class UIComponents:
         </div>
         """, unsafe_allow_html=True)
         
-        # File upload widget - GPX only
-        uploaded_file = st.file_uploader(
-            "Choose a GPX file",
-            type=['gpx'],
-            help=f"Upload a GPX file containing your route data (max {self.config.app.max_file_size_mb}MB)"
-        )
+        # Create tabs for different upload methods
+        tab1, tab2 = st.tabs(["📁 File Upload", "🚴 Recent Strava Rides"])
         
-        if uploaded_file is not None:
-            self._process_uploaded_file(uploaded_file)
-        else:
-            st.info("📂 Select a GPX file above to begin route analysis.")
+        with tab1:
+            st.markdown("### Upload GPX File")
+            # File upload widget - GPX only
+            uploaded_file = st.file_uploader(
+                "Choose a GPX file",
+                type=['gpx'],
+                help=f"Upload a GPX file containing your route data (max {self.config.app.max_file_size_mb}MB)"
+            )
+            
+            if uploaded_file is not None:
+                self._process_uploaded_file(uploaded_file)
+            else:
+                st.info("📂 Select a GPX file above to begin route analysis.")
+        
+        with tab2:
+            st.markdown("### Analyze Recent Strava Rides")
+            self._render_strava_routes_section()
         
         log_function_exit(logger, "render_route_upload_page")
     
@@ -361,6 +370,216 @@ class UIComponents:
             log_error(logger, e, f"Error processing file: {uploaded_file.name}")
             st.error(f"❌ Error processing file: {str(e)}")
             st.info("Please ensure you've uploaded a valid GPX file.")
+    
+    def _render_strava_routes_section(self):
+        """Render section for selecting and analyzing recent Strava rides."""
+        log_function_entry(logger, "_render_strava_routes_section")
+        
+        # Check authentication status
+        if not self.auth_manager.is_authenticated():
+            st.info("🔐 Please connect your Strava account to access your recent rides.")
+            st.markdown("👈 Use the **Authentication** section in the sidebar to connect.")
+            log_function_exit(logger, "_render_strava_routes_section", "Not authenticated")
+            return
+        
+        # Get recent activities
+        if "recent_strava_activities" not in st.session_state or st.button("🔄 Refresh Recent Rides"):
+            with st.spinner("Fetching your recent rides from Strava..."):
+                try:
+                    access_token = st.session_state.get("access_token")
+                    
+                    # Fetch recent activities with limit of 10 to get 5 rides
+                    activities = self.auth_manager.oauth_client.get_athlete_activities(
+                        access_token, 
+                        page=1, 
+                        per_page=10  # Get more than 5 to filter for rides only
+                    )
+                    
+                    # Filter for cycling activities only and limit to 5
+                    ride_activities = [
+                        activity for activity in activities 
+                        if activity.get('type', '').lower() in ['ride', 'virtualride', 'ebikeride']
+                    ][:5]  # Take only first 5 rides
+                    
+                    st.session_state["recent_strava_activities"] = ride_activities
+                    logger.info(f"Fetched {len(ride_activities)} recent rides")
+                    
+                except Exception as e:
+                    log_error(logger, e, "Error fetching recent Strava activities")
+                    st.error(f"❌ Error fetching recent rides: {str(e)}")
+                    st.info("💡 Try refreshing your authentication or check your Strava connection.")
+                    log_function_exit(logger, "_render_strava_routes_section", "Error fetching activities")
+                    return
+        else:
+            ride_activities = st.session_state.get("recent_strava_activities", [])
+        
+        # Display recent rides
+        if not ride_activities:
+            st.info("📭 No recent rides found. Go cycling and come back!")
+            log_function_exit(logger, "_render_strava_routes_section", "No rides found")
+            return
+        
+        st.success(f"✅ Found {len(ride_activities)} recent rides from Strava!")
+        
+        # Create selection interface
+        st.markdown("**Select a ride to analyze:**")
+        
+        # Display rides in a more compact format
+        for i, activity in enumerate(ride_activities):
+            self._render_strava_activity_item(activity, i)
+        
+        log_function_exit(logger, "_render_strava_routes_section", "Success")
+    
+    def _render_strava_activity_item(self, activity: Dict, index: int):
+        """Render a single Strava activity item for selection."""
+        # Get unit preference
+        use_imperial = getattr(st.session_state, 'use_imperial', False)
+        
+        # Extract activity data
+        activity_id = activity.get('id')
+        name = activity.get('name', 'Unnamed Ride')
+        distance_m = activity.get('distance', 0)
+        distance_km = distance_m / 1000
+        elevation_gain = activity.get('total_elevation_gain', 0)
+        activity_date = activity.get('start_date_local', '').split('T')[0] if activity.get('start_date_local') else 'Unknown date'
+        moving_time = activity.get('moving_time', 0)
+        
+        # Format units
+        distance_str = UnitConverter.format_distance(distance_km, use_imperial)
+        elevation_str = UnitConverter.format_elevation(elevation_gain, use_imperial)
+        
+        # Format duration
+        hours = moving_time // 3600
+        minutes = (moving_time % 3600) // 60
+        duration_str = f"{hours:02d}:{minutes:02d}" if hours > 0 else f"{minutes} min"
+        
+        # Create expandable item
+        with st.expander(f"🚴 {name} - {distance_str} ({activity_date})"):
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.write(f"**Distance:** {distance_str}")
+                st.write(f"**Elevation Gain:** {elevation_str}")
+                st.write(f"**Duration:** {duration_str}")
+            
+            with col2:
+                st.write(f"**Date:** {activity_date}")
+                st.write(f"**Type:** {activity.get('type', 'Ride')}")
+                if activity.get('average_speed'):
+                    avg_speed_ms = activity['average_speed']
+                    avg_speed_kmh = avg_speed_ms * 3.6
+                    speed_str = f"{avg_speed_kmh:.1f} km/h"
+                    if use_imperial:
+                        avg_speed_mph = avg_speed_kmh * 0.621371
+                        speed_str = f"{avg_speed_mph:.1f} mph"
+                    st.write(f"**Avg Speed:** {speed_str}")
+            
+            # Analyze button
+            if st.button(f"📊 Analyze This Ride", key=f"analyze_strava_{index}"):
+                self._process_strava_activity(activity)
+    
+    def _process_strava_activity(self, activity: Dict):
+        """Process and analyze a selected Strava activity."""
+        log_function_entry(logger, "_process_strava_activity", activity_id=activity.get('id'))
+        
+        activity_id = activity.get('id')
+        activity_name = activity.get('name', 'Strava Ride')
+        
+        with st.spinner(f"Fetching GPS data for '{activity_name}'..."):
+            try:
+                access_token = st.session_state.get("access_token")
+                
+                # Get activity streams (GPS data)
+                streams = self.auth_manager.oauth_client.get_activity_streams(
+                    access_token, 
+                    str(activity_id),
+                    keys="latlng,elevation,time"  # Get GPS coordinates, elevation, and time
+                )
+                
+                # Check if we have GPS data
+                if not streams or 'latlng' not in streams:
+                    st.error("❌ This activity doesn't contain GPS data. It might be an indoor ride or the GPS wasn't enabled.")
+                    return
+                
+                # Convert Strava streams to route format
+                route_data = self._convert_strava_streams_to_route(streams, activity)
+                
+                # Calculate route statistics
+                stats = self.route_processor.calculate_route_statistics(
+                    route_data, 
+                    include_traffic_analysis=False
+                )
+                
+                # Render analysis
+                st.success(f"✅ Successfully loaded GPS data for '{activity_name}'!")
+                self._render_route_analysis(route_data, stats, f"Strava: {activity_name}")
+                
+                log_function_exit(logger, "_process_strava_activity", "Success")
+                
+            except Exception as e:
+                log_error(logger, e, f"Error processing Strava activity: {activity_id}")
+                st.error(f"❌ Error analyzing ride: {str(e)}")
+                
+                # Provide helpful suggestions
+                if "not found" in str(e).lower():
+                    st.info("💡 This activity might be private or no longer available.")
+                elif "streams" in str(e).lower():
+                    st.info("💡 This activity doesn't have GPS data or it's not accessible.")
+                else:
+                    st.info("💡 Try selecting a different ride or check your Strava connection.")
+    
+    def _convert_strava_streams_to_route(self, streams: Dict, activity: Dict) -> Dict:
+        """Convert Strava activity streams to KOMpass route format."""
+        log_function_entry(logger, "_convert_strava_streams_to_route")
+        
+        # Extract stream data
+        latlng_data = streams.get('latlng', {}).get('data', [])
+        elevation_data = streams.get('elevation', {}).get('data', [])
+        time_data = streams.get('time', {}).get('data', [])
+        
+        if not latlng_data:
+            raise ValueError("No GPS coordinates found in activity streams")
+        
+        # Create route points
+        route_points = []
+        for i, latlng in enumerate(latlng_data):
+            if len(latlng) >= 2:  # Ensure we have lat/lng
+                point = {
+                    'lat': latlng[0],
+                    'lon': latlng[1],
+                    'elevation': elevation_data[i] if i < len(elevation_data) else None,
+                    'time': time_data[i] if i < len(time_data) else None
+                }
+                route_points.append(point)
+        
+        # Create route data structure compatible with KOMpass
+        route_data = {
+            'tracks': [{
+                'name': activity.get('name', 'Strava Activity'),
+                'segments': [route_points]
+            }],
+            'routes': [],
+            'waypoints': [],
+            'metadata': {
+                'name': activity.get('name', 'Strava Activity'),
+                'description': f"Strava activity from {activity.get('start_date_local', 'unknown date')}",
+                'time': activity.get('start_date_local'),
+                'source': 'Strava',
+                'activity_id': activity.get('id'),
+                'activity_type': activity.get('type'),
+                'strava_data': {
+                    'distance': activity.get('distance'),
+                    'moving_time': activity.get('moving_time'),
+                    'total_elevation_gain': activity.get('total_elevation_gain'),
+                    'average_speed': activity.get('average_speed')
+                }
+            }
+        }
+        
+        logger.info(f"Converted Strava activity to route data: {len(route_points)} points")
+        log_function_exit(logger, "_convert_strava_streams_to_route", "Success")
+        
+        return route_data
     
     def _render_route_analysis(self, route_data: Dict, stats: Dict, filename: str):
         """Render comprehensive route analysis."""
