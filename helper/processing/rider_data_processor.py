@@ -62,7 +62,11 @@ class RiderDataProcessor:
             
             # 2. Athlete statistics (includes power records)
             logger.info("Fetching athlete statistics and power records")
-            rider_data["stats"] = _self.oauth_client.get_athlete_stats(access_token)
+            try:
+                rider_data["stats"] = _self.oauth_client.get_athlete_stats(access_token)
+            except Exception as e:
+                logger.warning(f"Could not fetch athlete stats: {e}")
+                rider_data["stats"] = None
             
             # 3. Power and heart rate zones
             logger.info("Fetching athlete zones")
@@ -74,7 +78,11 @@ class RiderDataProcessor:
             
             # 4. Recent activities for fitness trend analysis
             logger.info("Fetching recent activities for fitness analysis")
-            rider_data["recent_activities"] = _self._fetch_recent_activities_comprehensive(access_token)
+            try:
+                rider_data["recent_activities"] = _self._fetch_recent_activities_comprehensive(access_token)
+            except Exception as e:
+                logger.warning(f"Could not fetch recent activities: {e}")
+                rider_data["recent_activities"] = []
             
             # 5. Process fitness metrics
             logger.info("Processing fitness metrics")
@@ -102,6 +110,7 @@ class RiderDataProcessor:
         except Exception as e:
             log_error(logger, e, "Failed to fetch comprehensive rider data")
             # Return partial data if some sections succeeded
+            rider_data["error"] = str(e)
             return rider_data
     
     def _fetch_recent_activities_comprehensive(self, access_token: str, days_back: int = 90) -> List[Dict]:
@@ -546,3 +555,78 @@ class RiderDataProcessor:
         except Exception as e:
             log_error(logger, e, "Error engineering features")
             return features
+    
+    def validate_rider_data(self, rider_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Validate and assess the completeness of rider data.
+        
+        Args:
+            rider_data: Comprehensive rider data dictionary
+            
+        Returns:
+            Dictionary containing validation results and data quality metrics
+        """
+        validation = {
+            "is_valid": True,
+            "completeness_score": 0.0,
+            "missing_components": [],
+            "data_quality": {},
+            "recommendations": []
+        }
+        
+        try:
+            # Check required components
+            required_components = [
+                "basic_info", "stats", "zones", "recent_activities", 
+                "fitness_metrics", "power_analysis", "training_load"
+            ]
+            
+            available_components = 0
+            for component in required_components:
+                if rider_data.get(component):
+                    available_components += 1
+                else:
+                    validation["missing_components"].append(component)
+            
+            validation["completeness_score"] = available_components / len(required_components)
+            
+            # Assess data quality
+            if rider_data.get("recent_activities"):
+                activities_count = len(rider_data["recent_activities"])
+                validation["data_quality"]["activity_count"] = activities_count
+                
+                if activities_count < 10:
+                    validation["recommendations"].append("More recent activities would improve fitness analysis accuracy")
+                elif activities_count > 100:
+                    validation["data_quality"]["rich_dataset"] = True
+            
+            # Check for power data availability
+            if rider_data.get("power_analysis", {}).get("recent_power_metrics"):
+                validation["data_quality"]["has_power_data"] = True
+            else:
+                validation["recommendations"].append("Power meter data would enable advanced performance analysis")
+            
+            # Check data freshness
+            fetch_time = rider_data.get("fetch_timestamp")
+            if fetch_time:
+                from datetime import datetime
+                fetch_dt = datetime.fromisoformat(fetch_time)
+                age_hours = (datetime.now() - fetch_dt).total_seconds() / 3600
+                validation["data_quality"]["data_age_hours"] = age_hours
+                
+                if age_hours > 24:
+                    validation["recommendations"].append("Consider refreshing rider data for most current metrics")
+            
+            # Overall validation
+            if validation["completeness_score"] < 0.5:
+                validation["is_valid"] = False
+                validation["recommendations"].append("Insufficient data for reliable analysis")
+            
+            logger.info(f"Rider data validation: {validation['completeness_score']:.1%} complete")
+            return validation
+            
+        except Exception as e:
+            log_error(logger, e, "Error validating rider data")
+            validation["is_valid"] = False
+            validation["error"] = str(e)
+            return validation

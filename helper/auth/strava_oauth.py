@@ -42,7 +42,7 @@ class StravaOAuth:
             "response_type": "code",
             "redirect_uri": redirect_uri,
             "approval_prompt": "force",  # Force approval prompt per Strava docs
-            "scope": "read,activity:read_all"  # Comma-separated as per Strava docs
+            "scope": "read,activity:read_all,profile:read_all"  # Expanded scope for comprehensive data
         }
         
         if state:
