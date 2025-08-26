@@ -16,14 +16,28 @@ class StravaConfig:
     """Strava API configuration."""
     client_id: str
     client_secret: str
-    redirect_uri_local: str = "http://localhost:8501"
+    redirect_uri_local: str = "http://localhost:8501/"
     redirect_uri_prod: str = "https://kompass-dev.streamlit.app/"
     
     def get_redirect_uri(self) -> str:
         """Get appropriate redirect URI based on environment."""
-        if os.environ.get("STREAMLIT_ENV") == "development":
-            return self.redirect_uri_local
-        return self.redirect_uri_prod
+        # Check multiple environment indicators for development
+        is_development = (
+            os.environ.get("STREAMLIT_ENV") == "development" or
+            os.environ.get("ENVIRONMENT") == "development" or
+            os.environ.get("ENV") == "dev" or
+            "localhost" in os.environ.get("STREAMLIT_SERVER_ADDRESS", "") or
+            os.environ.get("STREAMLIT_SERVER_PORT") == "8501"
+        )
+        
+        redirect_uri = self.redirect_uri_local if is_development else self.redirect_uri_prod
+        
+        # Log the redirect URI being used for debugging
+        from logging_config import get_logger
+        logger = get_logger(__name__)
+        logger.info(f"Using redirect URI: {redirect_uri} (development={is_development})")
+        
+        return redirect_uri
 
 
 @dataclass
@@ -99,14 +113,21 @@ class ConfigManager:
             logger.warning("STRAVA_CLIENT_SECRET not found in environment variables")
             client_secret = "your_client_secret_here"
         
+        # Allow environment variable overrides for redirect URIs
+        redirect_uri_local = os.environ.get("STRAVA_REDIRECT_URI_LOCAL", "http://localhost:8501/")
+        redirect_uri_prod = os.environ.get("STRAVA_REDIRECT_URI_PROD", "https://kompass-dev.streamlit.app/")
+        
         config = StravaConfig(
             client_id=client_id,
             client_secret=client_secret,
-            redirect_uri_local=os.environ.get("STRAVA_REDIRECT_URI_LOCAL", "http://localhost:8501"),
-            redirect_uri_prod=os.environ.get("STRAVA_REDIRECT_URI_PROD", "https://kompass-dev.streamlit.app/")
+            redirect_uri_local=redirect_uri_local,
+            redirect_uri_prod=redirect_uri_prod
         )
         
-        logger.debug(f"Strava config loaded - Client ID: {client_id[:8]}...")
+        logger.info(f"Strava config loaded - Client ID: {client_id[:8] if len(client_id) > 8 else client_id}...")
+        logger.info(f"Local redirect URI: {redirect_uri_local}")
+        logger.info(f"Production redirect URI: {redirect_uri_prod}")
+        
         return config
     
     def _load_app_config(self) -> AppConfig:

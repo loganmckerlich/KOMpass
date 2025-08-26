@@ -46,7 +46,13 @@ class StravaOAuth:
             params["state"] = state
             
         query_string = urllib.parse.urlencode(params)
-        return f"{self.authorization_base_url}?{query_string}"
+        auth_url = f"{self.authorization_base_url}?{query_string}"
+        
+        # Log for debugging OAuth issues
+        print(f"DEBUG: Generated authorization URL with redirect_uri: {redirect_uri}")
+        print(f"DEBUG: Full authorization URL: {auth_url}")
+        
+        return auth_url
     
     def exchange_code_for_token(self, authorization_code: str, redirect_uri: str) -> Dict:
         """
@@ -66,10 +72,25 @@ class StravaOAuth:
             "grant_type": "authorization_code"
         }
         
+        print(f"DEBUG: Exchanging code for token with redirect_uri: {redirect_uri}")
+        
         response = requests.post(self.token_url, data=data)
         
         if response.status_code != 200:
-            raise Exception(f"Token exchange failed: {response.status_code} - {response.text}")
+            error_msg = f"Token exchange failed: {response.status_code} - {response.text}"
+            print(f"DEBUG: Token exchange error: {error_msg}")
+            
+            # Provide specific guidance for common OAuth errors
+            if response.status_code == 400:
+                if "invalid_grant" in response.text.lower():
+                    error_msg += "\n\nThis usually means:\n"
+                    error_msg += "1. The authorization code has expired (they expire quickly)\n"
+                    error_msg += "2. The authorization code has already been used\n"
+                    error_msg += "3. The redirect_uri doesn't match what was used in the authorization request"
+                elif "invalid_client" in response.text.lower():
+                    error_msg += "\n\nThis usually means your STRAVA_CLIENT_ID or STRAVA_CLIENT_SECRET is incorrect."
+            
+            raise Exception(error_msg)
         
         return response.json()
     
