@@ -161,7 +161,7 @@ class WeatherAnalyzer:
             
             for i, point in enumerate(route_points):
                 # Find the corresponding weather data for this time
-                point_time = start_time + timedelta(hours=point['estimated_time_offset_hours'])
+                point_time = start_time + timedelta(hours=point.get('time_offset_hours', point.get('estimated_time_offset_hours', 0)))
                 
                 # Find closest weather hour
                 closest_weather_idx = self._find_closest_time_index(times, point_time)
@@ -255,7 +255,7 @@ class WeatherAnalyzer:
             rain_periods = 0
             
             for point in route_points:
-                point_time = start_time + timedelta(hours=point['estimated_time_offset_hours'])
+                point_time = start_time + timedelta(hours=point.get('time_offset_hours', point.get('estimated_time_offset_hours', 0)))
                 closest_idx = self._find_closest_time_index(times, point_time)
                 
                 if closest_idx is not None:
@@ -327,7 +327,7 @@ class WeatherAnalyzer:
             high_heat_periods = 0
             
             for point in route_points:
-                point_time = start_time + timedelta(hours=point['estimated_time_offset_hours'])
+                point_time = start_time + timedelta(hours=point.get('time_offset_hours', point.get('estimated_time_offset_hours', 0)))
                 closest_idx = self._find_closest_time_index(times, point_time)
                 
                 if closest_idx is not None:
