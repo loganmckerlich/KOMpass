@@ -49,6 +49,40 @@ Install the required dependencies:
 pip install -r requirements.txt
 ```
 
+## Strava OAuth Configuration
+
+To use Strava features, you need to configure OAuth authentication:
+
+### 1. Create Strava Application
+1. Go to [Strava API Settings](https://www.strava.com/settings/api)
+2. Create a new application or use an existing one
+3. Set the **Authorization Callback Domain**:
+   - For production: `kompass-dev.streamlit.app`
+   - For local development: `localhost`
+   - ⚠️ **Important**: Do NOT include `https://` or trailing slash
+
+### 2. Set Environment Variables
+```bash
+export STRAVA_CLIENT_ID=your_client_id_here
+export STRAVA_CLIENT_SECRET=your_client_secret_here
+
+# For local development:
+export STREAMLIT_ENV=development
+```
+
+### 3. Verify Configuration (Optional)
+Run the verification script to check your OAuth setup:
+```bash
+python verify_oauth_config.py
+```
+
+### 4. Troubleshooting OAuth Issues
+If you're getting **403 errors** during Strava authentication:
+- See the [OAuth Troubleshooting Guide](./OAUTH_TROUBLESHOOTING.md) for detailed solutions
+- Ensure redirect URI domains match exactly between Strava settings and your environment
+- Check that environment variables are set correctly
+- Verify your Client ID and Client Secret are correct
+
 ## Running the Application
 
 ```bash

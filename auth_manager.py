@@ -3,6 +3,7 @@ Authentication manager for Strava OAuth integration.
 Handles OAuth flow, token management, and user session state.
 """
 
+import os
 import streamlit as st
 from typing import Dict, Optional, Any
 from strava_oauth import StravaOAuth
@@ -348,10 +349,52 @@ class AuthenticationManager:
                 
                 **Data Privacy:** Your data stays secure and is only used within this application.
                 """)
-        
+            
+            # Debug information for troubleshooting
+            with st.expander("🔧 OAuth Configuration Debug Info"):
+                redirect_uri = self.config.strava.get_redirect_uri()
+                st.markdown(f"""
+                **Current Configuration:**
+                - Redirect URI: `{redirect_uri}`
+                - Client ID: `{self.config.strava.client_id[:8] if len(self.config.strava.client_id) > 8 else self.config.strava.client_id}...`
+                - Environment: `{os.environ.get('STREAMLIT_ENV', 'production')}`
+                
+                **If you're getting 403 errors:**
+                1. Go to [Strava API Settings](https://www.strava.com/settings/api)
+                2. Set "Authorization Callback Domain" to:
+                   - For localhost: `localhost`
+                   - For production: `kompass-dev.streamlit.app`
+                3. Make sure the domain matches exactly (no http/https prefix, no trailing slash)
+                4. The domain must match the redirect URI being used above
+                
+                **Common Issues:**
+                - Domain mismatch between Strava settings and redirect URI
+                - Missing or incorrect environment variables
+                - Using wrong Client ID or Client Secret
+                """)
+                
         else:
             st.error("❌ Unable to generate authorization URL")
             st.info("Please check the application configuration.")
+            
+            # Show configuration help
+            with st.expander("🔧 Configuration Help"):
+                st.markdown("""
+                **Required Environment Variables:**
+                - `STRAVA_CLIENT_ID`: Your Strava application's Client ID
+                - `STRAVA_CLIENT_SECRET`: Your Strava application's Client Secret
+                
+                **Optional Environment Variables:**
+                - `STREAMLIT_ENV=development`: Set for local development
+                - `STRAVA_REDIRECT_URI_LOCAL`: Override local redirect URI
+                - `STRAVA_REDIRECT_URI_PROD`: Override production redirect URI
+                
+                **Get your Strava API credentials:**
+                1. Go to [Strava API Settings](https://www.strava.com/settings/api)
+                2. Create a new application or use an existing one
+                3. Copy the Client ID and Client Secret
+                4. Set the Authorization Callback Domain appropriately
+                """)
 
 
 # Global authentication manager instance
