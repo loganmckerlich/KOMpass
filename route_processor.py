@@ -860,11 +860,14 @@ class RouteProcessor:
             raise ValueError(f"Unsupported file type: {file_extension}. Supported types: GPX, FIT")
     
     @st.cache_data(ttl=3600)  # Cache route statistics for 1 hour
-    def calculate_route_statistics(_self, route_data: Dict) -> Dict:
+    def calculate_route_statistics(_self, route_data: Dict, include_traffic_analysis: bool = False, 
+                                  enable_advanced_analysis: bool = True) -> Dict:
         """Calculate comprehensive statistics for the route including ML-ready features.
         
         Args:
             route_data: Parsed route data dictionary
+            include_traffic_analysis: Whether to include traffic stop analysis (slow)
+            enable_advanced_analysis: Whether to include power and ML features
             
         Returns:
             Dictionary containing route statistics and advanced metrics
@@ -936,8 +939,8 @@ class RouteProcessor:
         stats['total_elevation_gain_m'] = round(stats['total_elevation_gain_m'], 1)
         stats['total_elevation_loss_m'] = round(stats['total_elevation_loss_m'], 1)
         
-        # Advanced ML-ready metrics
-        if len(all_points) >= 2:
+        # Advanced ML-ready metrics (only if enabled)
+        if len(all_points) >= 2 and enable_advanced_analysis:
             # Gradient analysis
             gradient_analysis = _self._analyze_gradients(all_points)
             stats['gradient_analysis'] = gradient_analysis
@@ -958,9 +961,18 @@ class RouteProcessor:
             power_analysis = _self._estimate_power_requirements(gradient_analysis, total_distance)
             stats['power_analysis'] = power_analysis
             
-            # Traffic stop analysis
-            traffic_analysis = _self._analyze_traffic_stops(all_points, stats)
-            stats['traffic_analysis'] = traffic_analysis
+            # Traffic stop analysis (optional - can be very slow)
+            if include_traffic_analysis:
+                traffic_analysis = _self._analyze_traffic_stops(all_points, stats)
+                stats['traffic_analysis'] = traffic_analysis
+            else:
+                stats['traffic_analysis'] = {
+                    'analysis_available': False,
+                    'reason': 'Traffic analysis disabled for performance',
+                    'traffic_lights_detected': 0,
+                    'major_road_crossings': 0,
+                    'total_potential_stops': 0
+                }
             
             # Additional derived metrics for ML
             ml_features = {
@@ -977,8 +989,9 @@ class RouteProcessor:
                 ) / 100, 3)
             }
             
-            # Add traffic-related ML features
-            if traffic_analysis.get('analysis_available'):
+            # Add traffic-related ML features if traffic analysis was performed
+            if include_traffic_analysis and stats['traffic_analysis'].get('analysis_available'):
+                traffic_analysis = stats['traffic_analysis']
                 ml_features.update({
                     'stop_density_per_km': traffic_analysis.get('stop_density_per_km', 0),
                     'estimated_stop_time_penalty_min': traffic_analysis.get('estimated_time_penalty_minutes', 0),
@@ -989,8 +1002,98 @@ class RouteProcessor:
                 })
             
             stats['ml_features'] = ml_features
+        elif len(all_points) >= 2:
+            # Basic gradient analysis for essential metrics even when advanced analysis is disabled
+            gradient_analysis = _self._analyze_gradients(all_points)
+            stats['gradient_analysis'] = gradient_analysis
         
         return stats
+    
+    def create_analysis_dataframe(self, route_data: Dict, stats: Dict) -> pd.DataFrame:
+        """Create a structured DataFrame with all route analysis data.
+        
+        Args:
+            route_data: Parsed route data
+            stats: Route statistics
+            
+        Returns:
+            Pandas DataFrame with comprehensive analysis data
+        """
+        # Collect all points
+        all_points = []
+        for track in route_data.get('tracks', []):
+            for segment in track.get('segments', []):
+                all_points.extend(segment)
+        for route in route_data.get('routes', []):
+            all_points.extend(route.get('points', []))
+        
+        if not all_points:
+            return pd.DataFrame()
+        
+        # Create base dataframe with point data
+        df_data = []
+        for i, point in enumerate(all_points):
+            row = {
+                'point_index': i,
+                'latitude': point['lat'],
+                'longitude': point['lon'],
+                'elevation_m': point.get('elevation'),
+                'time': point.get('time')
+            }
+            
+            # Add distance calculations
+            if i > 0:
+                prev_point = all_points[i-1]
+                distance_segment = haversine_distance(
+                    prev_point['lat'], prev_point['lon'],
+                    point['lat'], point['lon']
+                ) * 1000  # Convert to meters
+                row['distance_from_previous_m'] = distance_segment
+                row['cumulative_distance_m'] = df_data[i-1]['cumulative_distance_m'] + distance_segment
+                
+                # Add gradient if elevation available
+                if point.get('elevation') is not None and prev_point.get('elevation') is not None:
+                    elevation_change = point['elevation'] - prev_point['elevation']
+                    gradient = calculate_gradient(distance_segment, elevation_change)
+                    row['gradient_percent'] = gradient
+                    row['elevation_change_m'] = elevation_change
+            else:
+                row['distance_from_previous_m'] = 0
+                row['cumulative_distance_m'] = 0
+                row['gradient_percent'] = 0
+                row['elevation_change_m'] = 0
+            
+            df_data.append(row)
+        
+        df = pd.DataFrame(df_data)
+        
+        # Add summary statistics as metadata
+        df.attrs['route_summary'] = {
+            'total_distance_km': stats.get('total_distance_km', 0),
+            'total_elevation_gain_m': stats.get('total_elevation_gain_m', 0),
+            'total_elevation_loss_m': stats.get('total_elevation_loss_m', 0),
+            'max_elevation_m': stats.get('max_elevation_m'),
+            'min_elevation_m': stats.get('min_elevation_m'),
+            'total_points': stats.get('total_points', 0)
+        }
+        
+        # Add advanced analysis as metadata if available
+        if stats.get('gradient_analysis'):
+            df.attrs['gradient_analysis'] = stats['gradient_analysis']
+        if stats.get('climb_analysis'):
+            df.attrs['climb_analysis'] = stats['climb_analysis']
+        if stats.get('complexity_analysis'):
+            df.attrs['complexity_analysis'] = stats['complexity_analysis']
+        if stats.get('terrain_analysis'):
+            df.attrs['terrain_analysis'] = stats['terrain_analysis']
+        if stats.get('power_analysis'):
+            df.attrs['power_analysis'] = stats['power_analysis']
+        if stats.get('traffic_analysis'):
+            df.attrs['traffic_analysis'] = stats['traffic_analysis']
+        if stats.get('ml_features'):
+            df.attrs['ml_features'] = stats['ml_features']
+        
+        return df
     
     @st.cache_resource(ttl=3600)  # Cache maps for 1 hour
     def create_route_map(_self, route_data: Dict, stats: Dict) -> folium.Map:

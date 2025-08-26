@@ -180,7 +180,13 @@ class UIComponents:
                 with st.spinner("Processing route data..."):
                     start_time = time.time()
                     route_data = self.route_processor.parse_route_file(file_content_bytes, uploaded_file.name)
-                    stats = self.route_processor.calculate_route_statistics(route_data)
+                    
+                    # Calculate basic stats quickly (without traffic analysis by default)
+                    stats = self.route_processor.calculate_route_statistics(
+                        route_data, 
+                        include_traffic_analysis=False,  # Skip slow traffic analysis by default
+                        enable_advanced_analysis=True
+                    )
                     processing_time = time.time() - start_time
                 
                 # Cache the processed data in session state
@@ -203,27 +209,72 @@ class UIComponents:
         """Render comprehensive route analysis."""
         log_function_entry(logger, "_render_route_analysis", filename=filename)
         
-        # Basic route statistics
+        # Basic route statistics (always shown)
         self._render_basic_stats(stats)
         
-        # Advanced metrics
+        # Essential gradient analysis (fast, always included)
         if stats.get('gradient_analysis'):
             self._render_gradient_analysis(stats['gradient_analysis'])
         
+        # Show key summary stats only
+        st.subheader("📋 Route Summary")
+        col1, col2, col3 = st.columns(3)
+        
+        gradient_analysis = stats.get('gradient_analysis', {})
+        with col1:
+            terrain_type = self._get_simple_terrain_type(gradient_analysis)
+            st.metric("Terrain Type", terrain_type)
+            if gradient_analysis.get('average_gradient_percent'):
+                st.metric("Avg Gradient", f"{gradient_analysis.get('average_gradient_percent', 0)}%")
+        
+        with col2:
+            if gradient_analysis.get('steep_climbs_percent'):
+                st.metric("Steep Sections", f"{gradient_analysis.get('steep_climbs_percent', 0)}%")
+            if gradient_analysis.get('max_gradient_percent'):
+                st.metric("Max Gradient", f"{gradient_analysis.get('max_gradient_percent', 0)}%")
+        
+        with col3:
+            # Calculate a simple difficulty score
+            difficulty = self._calculate_simple_difficulty(stats, gradient_analysis)
+            st.metric("Difficulty Rating", difficulty)
+            if stats.get('total_points'):
+                point_density = stats['total_points'] / max(stats.get('total_distance_km', 1), 0.1)
+                st.metric("Route Detail", f"{point_density:.0f} pts/km")
+        
+        # Advanced analysis options (expandable)
+        with st.expander("🔬 Advanced Analysis", expanded=False):
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                # Option to enable traffic analysis
+                if st.button("🚦 Analyze Traffic Stops", help="Analyze potential traffic lights and road crossings (may take 10-30 seconds)"):
+                    self._perform_traffic_analysis(route_data, stats, filename)
+            
+            with col2:
+                # Option to generate detailed dataframe
+                if st.button("📊 Generate Detailed Analysis", help="Create comprehensive dataframe with all route data"):
+                    self._generate_detailed_dataframe(route_data, stats)
+        
+        # Show detailed metrics if they exist
         if stats.get('climb_analysis') and stats['climb_analysis'].get('climb_count', 0) > 0:
-            self._render_climb_analysis(stats['climb_analysis'])
+            with st.expander("🚴‍♂️ Detailed Climbing Analysis", expanded=False):
+                self._render_climb_analysis(stats['climb_analysis'])
         
         if stats.get('complexity_analysis'):
-            self._render_complexity_analysis(stats['complexity_analysis'], stats.get('ml_features', {}))
+            with st.expander("🛣️ Route Complexity Analysis", expanded=False):
+                self._render_complexity_analysis(stats['complexity_analysis'], stats.get('ml_features', {}))
         
-        if stats.get('terrain_analysis'):
-            self._render_terrain_analysis(stats['terrain_analysis'], stats.get('power_analysis', {}))
+        if stats.get('terrain_analysis') and stats.get('power_analysis'):
+            with st.expander("🏔️ Terrain & Power Analysis", expanded=False):
+                self._render_terrain_analysis(stats['terrain_analysis'], stats.get('power_analysis', {}))
         
-        if stats.get('traffic_analysis'):
-            self._render_traffic_analysis(stats['traffic_analysis'])
+        if stats.get('traffic_analysis', {}).get('analysis_available'):
+            with st.expander("🚦 Traffic Analysis Results", expanded=True):
+                self._render_traffic_analysis(stats['traffic_analysis'])
         
         if stats.get('ml_features'):
-            self._render_ml_features(stats['ml_features'])
+            with st.expander("🤖 ML Features & Advanced Metrics", expanded=False):
+                self._render_ml_features(stats['ml_features'])
         
         # Weather analysis section
         self._render_weather_analysis_section(route_data, stats)
@@ -238,6 +289,135 @@ class UIComponents:
         self._render_save_route_section(route_data, stats)
         
         log_function_exit(logger, "_render_route_analysis")
+    
+    def _get_simple_terrain_type(self, gradient_analysis: Dict) -> str:
+        """Get a simple terrain classification."""
+        if not gradient_analysis:
+            return "Unknown"
+        
+        steep_pct = gradient_analysis.get('steep_climbs_percent', 0)
+        moderate_pct = gradient_analysis.get('moderate_climbs_percent', 0)
+        
+        if steep_pct > 20:
+            return "Mountainous"
+        elif moderate_pct + steep_pct > 30:
+            return "Hilly"
+        elif moderate_pct + steep_pct > 10:
+            return "Rolling"
+        else:
+            return "Flat"
+    
+    def _calculate_simple_difficulty(self, stats: Dict, gradient_analysis: Dict) -> str:
+        """Calculate a simple difficulty rating."""
+        if not gradient_analysis:
+            return "Unknown"
+        
+        distance_km = stats.get('total_distance_km', 0)
+        elevation_gain = stats.get('total_elevation_gain_m', 0)
+        steep_pct = gradient_analysis.get('steep_climbs_percent', 0)
+        
+        # Simple difficulty calculation
+        difficulty_score = 0
+        if distance_km > 50:
+            difficulty_score += 2
+        elif distance_km > 20:
+            difficulty_score += 1
+        
+        if elevation_gain > 1000:
+            difficulty_score += 2
+        elif elevation_gain > 500:
+            difficulty_score += 1
+        
+        if steep_pct > 15:
+            difficulty_score += 2
+        elif steep_pct > 5:
+            difficulty_score += 1
+        
+        if difficulty_score <= 1:
+            return "Easy"
+        elif difficulty_score <= 3:
+            return "Moderate"
+        elif difficulty_score <= 5:
+            return "Hard"
+        else:
+            return "Very Hard"
+    
+    def _perform_traffic_analysis(self, route_data: Dict, stats: Dict, filename: str):
+        """Perform traffic analysis asynchronously."""
+        with st.spinner("Analyzing traffic stops... This may take 10-30 seconds."):
+            try:
+                # Re-calculate with traffic analysis enabled
+                full_stats = self.route_processor.calculate_route_statistics(
+                    route_data, 
+                    include_traffic_analysis=True,
+                    enable_advanced_analysis=True
+                )
+                
+                # Update the session state with new stats
+                file_hash = hashlib.md5(str(route_data).encode()).hexdigest()
+                stats_key = f"route_stats_{file_hash}"
+                st.session_state[stats_key] = full_stats
+                
+                # Show traffic results
+                if full_stats.get('traffic_analysis', {}).get('analysis_available'):
+                    st.success("✅ Traffic analysis completed!")
+                    self._render_traffic_analysis(full_stats['traffic_analysis'])
+                else:
+                    reason = full_stats.get('traffic_analysis', {}).get('reason', 'Unknown error')
+                    st.warning(f"⚠️ Traffic analysis unavailable: {reason}")
+                    
+            except Exception as e:
+                st.error(f"❌ Error during traffic analysis: {str(e)}")
+    
+    def _generate_detailed_dataframe(self, route_data: Dict, stats: Dict):
+        """Generate and display detailed analysis dataframe."""
+        with st.spinner("Creating detailed analysis dataframe..."):
+            try:
+                # Create the dataframe
+                df = self.route_processor.create_analysis_dataframe(route_data, stats)
+                
+                if not df.empty:
+                    st.success("✅ Detailed analysis dataframe created!")
+                    
+                    # Show dataframe summary
+                    st.subheader("📊 Route Data Overview")
+                    st.write(f"**Points:** {len(df)} | **Columns:** {len(df.columns)}")
+                    
+                    # Show summary statistics
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        st.write("**Distance Statistics:**")
+                        st.write(f"• Total: {df['cumulative_distance_m'].max()/1000:.2f} km")
+                        st.write(f"• Avg segment: {df['distance_from_previous_m'].mean():.1f} m")
+                    
+                    with col2:
+                        st.write("**Elevation Statistics:**")
+                        if 'elevation_m' in df.columns and df['elevation_m'].notna().any():
+                            st.write(f"• Range: {df['elevation_m'].min():.0f} - {df['elevation_m'].max():.0f} m")
+                            st.write(f"• Avg gradient: {df['gradient_percent'].mean():.1f}%")
+                    
+                    # Show sample of the dataframe
+                    st.subheader("📋 Data Sample")
+                    st.dataframe(df.head(10), use_container_width=True)
+                    
+                    # Download option
+                    csv = df.to_csv(index=False)
+                    st.download_button(
+                        label="📥 Download Full Dataset as CSV",
+                        data=csv,
+                        file_name=f"route_analysis_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                        mime="text/csv"
+                    )
+                    
+                    # Show metadata if available
+                    if hasattr(df, 'attrs') and df.attrs:
+                        with st.expander("📝 Analysis Metadata", expanded=False):
+                            st.json(df.attrs)
+                else:
+                    st.warning("⚠️ No data available to create dataframe")
+                    
+            except Exception as e:
+                st.error(f"❌ Error creating dataframe: {str(e)}")
     
     @st.fragment  # Independent fragment for basic stats
     def _render_basic_stats(self, stats: Dict):
