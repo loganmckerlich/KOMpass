@@ -234,6 +234,23 @@ class AuthenticationManager:
         
         logger.info("User logged out - session state cleared")
         log_function_exit(logger, "logout")
+    
+    def render_authentication_ui(self):
+        """Render the appropriate authentication UI based on current state."""
+        log_function_entry(logger, "render_authentication_ui")
+        
+        if not self.is_oauth_configured():
+            st.error("❌ Strava OAuth not configured")
+            st.info("Please configure your Strava credentials to use authentication features.")
+            log_function_exit(logger, "render_authentication_ui")
+            return
+        
+        if self.is_authenticated():
+            self._render_authenticated_ui()
+        else:
+            self._render_login_ui()
+        
+        log_function_exit(logger, "render_authentication_ui")
 
 
 
