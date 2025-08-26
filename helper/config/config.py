@@ -224,7 +224,18 @@ class ConfigManager:
         validation_results["weather_url_valid"] = self._weather_config.base_url.startswith("http")
         validation_results["weather_timeout_valid"] = self._weather_config.timeout_seconds > 0
         
-        logger.info(f"Configuration validation completed: {sum(validation_results.values())}/{len(validation_results)} checks passed")
+        # Validate performance config
+        validation_results["performance_weight_valid"] = self._performance_config.default_rider_weight_kg > 0
+        validation_results["performance_bike_weight_valid"] = self._performance_config.default_bike_weight_kg > 0
+        validation_results["performance_cda_valid"] = 0.1 <= self._performance_config.default_cda <= 1.0
+        validation_results["performance_crr_valid"] = 0.001 <= self._performance_config.default_crr <= 0.02
+        validation_results["performance_efficiency_valid"] = 0.7 <= self._performance_config.default_efficiency <= 1.0
+        
+        # Ensure all values are boolean before summing to prevent TypeError
+        passed_checks = sum(bool(v) for v in validation_results.values())
+        total_checks = len(validation_results)
+        
+        logger.info(f"Configuration validation completed: {passed_checks}/{total_checks} checks passed")
         
         return validation_results
     
