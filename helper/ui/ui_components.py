@@ -38,8 +38,8 @@ class UIComponents:
         # Load custom CSS
         self._load_custom_css()
         
-        # Create responsive header with logo and title
-        header_col1, header_col2 = st.columns([1, 5])  # Better proportion for mobile
+        # Create responsive header with logo, title, and settings
+        header_col1, header_col2, header_col3 = st.columns([1, 4, 1])  # Add settings column
         
         with header_col1:
             # App logo with responsive styling
@@ -85,6 +85,19 @@ class UIComponents:
                 # Simple header without custom styling
                 st.title("🧭 KOMpass")
                 st.markdown("*Your intelligent cycling route analysis companion*")
+        
+        with header_col3:
+            # CSS toggle in header (not sidebar)
+            st.markdown("##### ⚙️")
+            enable_custom_css = st.toggle(
+                "Custom Styling", 
+                value=True,
+                key="enable_custom_css",
+                help="Enable Strava-inspired custom styling. Disable to use default Streamlit styling."
+            )
+            
+            # Store CSS preference in session state
+            st.session_state.enable_custom_css = enable_custom_css
         
         # Minimal authentication in sidebar
         with st.sidebar:
@@ -166,18 +179,7 @@ class UIComponents:
         st.sidebar.markdown("---")
         st.sidebar.markdown("### ⚙️ Settings")
         
-        # CSS toggle
-        enable_custom_css = st.sidebar.toggle(
-            "Custom Styling", 
-            value=True,
-            key="enable_custom_css",
-            help="Enable Strava-inspired custom styling. Disable to use default Streamlit styling."
-        )
-        
-        # Store CSS preference in session state
-        st.session_state.enable_custom_css = enable_custom_css
-        
-        # Unit toggle
+        # Unit toggle (CSS toggle moved to header)
         st.sidebar.markdown("### ⚖️ Units")
         use_imperial = st.sidebar.toggle(
             "Imperial (mi/ft)", 
