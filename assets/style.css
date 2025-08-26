@@ -48,6 +48,21 @@
 }
 
 /* Sidebar styling */
+[data-testid="stSidebar"] {
+    background: var(--strava-darker);
+    color: var(--strava-white);
+}
+
+[data-testid="stSidebar"] .stSelectbox label {
+    color: var(--strava-white) !important;
+    font-weight: 500;
+}
+
+[data-testid="stSidebar"] .stCheckbox label {
+    color: var(--strava-white) !important;
+}
+
+/* Legacy sidebar support */
 .css-1d391kg {
     background: var(--strava-darker);
     color: var(--strava-white);
@@ -414,8 +429,27 @@
     }
     
     /* Sidebar mobile adjustments */
+    [data-testid="stSidebar"] {
+        padding: 1rem 0.5rem;
+    }
+    
+    /* Legacy sidebar mobile support */
     .css-1d391kg {
         padding: 1rem 0.5rem;
+    }
+    
+    /* Ensure sidebar can collapse on mobile */
+    @media (max-width: 768px) {
+        [data-testid="stSidebar"] {
+            /* Allow Streamlit's default mobile sidebar behavior */
+            position: relative !important;
+        }
+        
+        /* Ensure sidebar toggle button is accessible */
+        [data-testid="stBaseButton-headerNoPadding"] {
+            z-index: 1000;
+            position: relative;
+        }
     }
     
     /* Form elements mobile optimization */
