@@ -17,6 +17,7 @@ import requests
 import time
 import streamlit as st
 import hashlib
+from ..storage.storage_manager import get_storage_manager
 # FIT support removed - GPX only
 
 @st.cache_data(ttl=3600)  # Cache for 1 hour
@@ -76,9 +77,10 @@ class RouteProcessor:
         """Initialize the route processor.
         
         Args:
-            data_dir: Directory to save processed route data
+            data_dir: Directory to save processed route data (for local fallback)
         """
         self.data_dir = data_dir
+        self.storage_manager = get_storage_manager()
         self._ensure_data_dir()
         
         # Overpass API configuration for OpenStreetMap queries
@@ -1145,16 +1147,17 @@ class RouteProcessor:
         
         return m
     
-    def save_route(self, route_data: Dict, stats: Dict, filename: str = None) -> str:
-        """Save processed route data to file.
+    def save_route(self, route_data: Dict, stats: Dict, user_id: str = None, filename: str = None) -> str:
+        """Save processed route data using storage manager.
         
         Args:
             route_data: Parsed route data
             stats: Route statistics
+            user_id: User ID for user-specific storage (None for anonymous)
             filename: Optional filename, auto-generated if not provided
             
         Returns:
-            Path to saved file
+            Filename of saved route (for reference)
         """
         if not filename:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -1164,62 +1167,108 @@ class RouteProcessor:
             route_name = route_name.replace(' ', '_')
             filename = f"{timestamp}_{route_name}.json"
         
-        filepath = os.path.join(self.data_dir, filename)
-        
         save_data = {
             'route_data': route_data,
             'statistics': stats,
             'processed_at': datetime.now().isoformat(),
-            'processor_version': '1.0'
+            'processor_version': '1.0',
+            'user_id': user_id  # Store user association
         }
         
-        with open(filepath, 'w', encoding='utf-8') as f:
-            json.dump(save_data, f, indent=2, ensure_ascii=False)
+        # Use storage manager to save data
+        success = self.storage_manager.save_data(save_data, user_id, 'routes', filename)
         
-        return filepath
+        if success:
+            return filename
+        else:
+            raise Exception(f"Failed to save route: {filename}")
     
-    def load_saved_routes(self) -> List[Dict]:
-        """Load all saved routes from the data directory.
+    def load_saved_routes(self, user_id: str = None) -> List[Dict]:
+        """Load saved routes for a user using storage manager.
+        
+        Args:
+            user_id: User ID to load routes for (None for anonymous/legacy routes)
         
         Returns:
             List of saved route information
         """
         saved_routes = []
         
+        try:
+            # Get routes from storage manager
+            files = self.storage_manager.list_user_data(user_id, 'routes') if user_id else self._load_legacy_routes()
+            
+            for file_info in files:
+                try:
+                    # Load route data to get metadata
+                    route_data = self.storage_manager.load_data(user_id, 'routes', file_info['filename'])
+                    
+                    if route_data:
+                        route_info = {
+                            'filename': file_info['filename'],
+                            'name': route_data.get('route_data', {}).get('metadata', {}).get('name', 'Unnamed Route'),
+                            'processed_at': route_data.get('processed_at', file_info.get('last_modified')),
+                            'distance_km': route_data.get('statistics', {}).get('total_distance_km', 0),
+                            'elevation_gain_m': route_data.get('statistics', {}).get('total_elevation_gain_m', 0),
+                            'user_id': route_data.get('user_id', user_id),
+                            'backend': file_info.get('backend', 'unknown')
+                        }
+                        saved_routes.append(route_info)
+                
+                except Exception as e:
+                    print(f"Error loading route {file_info['filename']}: {e}")
+            
+            # Sort by processed_at date (newest first)
+            saved_routes.sort(key=lambda x: x.get('processed_at', ''), reverse=True)
+            
+        except Exception as e:
+            print(f"Error loading saved routes: {e}")
+        
+        return saved_routes
+    
+    def _load_legacy_routes(self) -> List[Dict]:
+        """Load legacy routes from local storage for backward compatibility."""
+        files = []
+        
         if not os.path.exists(self.data_dir):
-            return saved_routes
+            return files
         
         for filename in os.listdir(self.data_dir):
             if filename.endswith('.json'):
                 filepath = os.path.join(self.data_dir, filename)
                 try:
-                    with open(filepath, 'r', encoding='utf-8') as f:
-                        data = json.load(f)
-                    
-                    route_info = {
+                    stat = os.stat(filepath)
+                    files.append({
                         'filename': filename,
                         'filepath': filepath,
-                        'name': data.get('route_data', {}).get('metadata', {}).get('name', 'Unnamed Route'),
-                        'processed_at': data.get('processed_at'),
-                        'distance_km': data.get('statistics', {}).get('total_distance_km', 0),
-                        'elevation_gain_m': data.get('statistics', {}).get('total_elevation_gain_m', 0)
-                    }
-                    saved_routes.append(route_info)
+                        'size_bytes': stat.st_size,
+                        'size_mb': round(stat.st_size / (1024 * 1024), 2),
+                        'last_modified': datetime.fromtimestamp(stat.st_mtime).isoformat(),
+                        'backend': 'local_legacy'
+                    })
                 except Exception as e:
-                    print(f"Error loading {filename}: {e}")
+                    print(f"Error checking legacy file {filename}: {e}")
         
-        # Sort by processed_at date (newest first)
-        saved_routes.sort(key=lambda x: x['processed_at'], reverse=True)
-        return saved_routes
+        return files
     
-    def load_route_data(self, filepath: str) -> Dict:
-        """Load a specific saved route data file.
+    def load_route_data(self, filename: str, user_id: str = None) -> Dict:
+        """Load a specific saved route data using storage manager.
         
         Args:
-            filepath: Path to the saved route file
+            filename: Name of the route file
+            user_id: User ID (None for legacy routes)
             
         Returns:
             Saved route data dictionary
         """
-        with open(filepath, 'r', encoding='utf-8') as f:
-            return json.load(f)
+        # Try loading from storage manager first
+        route_data = self.storage_manager.load_data(user_id, 'routes', filename)
+        
+        # Fallback to legacy local file if not found and no user_id specified
+        if route_data is None and user_id is None:
+            legacy_path = os.path.join(self.data_dir, filename)
+            if os.path.exists(legacy_path):
+                with open(legacy_path, 'r', encoding='utf-8') as f:
+                    route_data = json.load(f)
+        
+        return route_data
