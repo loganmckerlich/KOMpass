@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Test script for KOMpass backend storage system.
-Tests local storage, S3, Firebase configuration, and PII removal.
+Tests local storage, S3 configuration, and PII removal.
 """
 
 import os
@@ -138,12 +138,6 @@ def test_configuration():
         assert hasattr(config.s3, 'bucket_name'), "S3 bucket name not available"
         print("✓ S3 configuration structure valid")
         
-        # Test Firebase config
-        assert hasattr(config, 'firebase'), "Firebase config not available"
-        assert hasattr(config.firebase, 'enabled'), "Firebase enabled flag not available"
-        assert hasattr(config.firebase, 'project_id'), "Firebase project ID not available"
-        print("✓ Firebase configuration structure valid")
-        
         # Test validation
         validation = config.validate_configuration()
         assert isinstance(validation, dict), "Configuration validation failed"
@@ -154,79 +148,6 @@ def test_configuration():
         
     except Exception as e:
         print(f"Configuration: TEST FAILED ✗ - {e}")
-        return False
-
-def test_firebase_backend():
-    """Test Firebase storage backend if available."""
-    print("\nTesting Firebase Backend...")
-    
-    try:
-        from helper.storage.firebase_storage import FirebaseStorageBackend, FIREBASE_AVAILABLE
-        from helper.config.config import get_config
-        
-        if not FIREBASE_AVAILABLE:
-            print("⚠️  Firebase SDK not available - skipping Firebase tests")
-            return True
-        
-        config = get_config()
-        
-        if not config.firebase.enabled:
-            print("⚠️  Firebase disabled - skipping Firebase tests")
-            return True
-        
-        if not config.firebase.is_configured():
-            print("⚠️  Firebase not configured - skipping Firebase tests")
-            return True
-        
-        # Test Firebase backend
-        backend = FirebaseStorageBackend(config.firebase)
-        
-        if not backend.is_available():
-            print("⚠️  Firebase backend not available - skipping Firebase tests")
-            return True
-        
-        print("✓ Firebase backend initialization successful")
-        
-        # Test basic operations
-        test_data = {'test': 'firebase_data', 'timestamp': datetime.now().isoformat()}
-        
-        # Test save
-        success = backend.save_file(test_data, 'test_user', 'routes', 'firebase_test.json')
-        if success:
-            print("✓ Firebase save operation successful")
-        else:
-            print("❌ Firebase save operation failed")
-            return False
-        
-        # Test load
-        loaded = backend.load_file('test_user', 'routes', 'firebase_test.json')
-        if loaded and loaded.get('test') == 'firebase_data':
-            print("✓ Firebase load operation successful")
-        else:
-            print("❌ Firebase load operation failed")
-            return False
-        
-        # Test list
-        files = backend.list_files('test_user', 'routes')
-        if any(f['filename'] == 'firebase_test.json' for f in files):
-            print("✓ Firebase list operation successful")
-        else:
-            print("❌ Firebase list operation failed")
-            return False
-        
-        # Test delete
-        success = backend.delete_file('test_user', 'routes', 'firebase_test.json')
-        if success:
-            print("✓ Firebase delete operation successful")
-        else:
-            print("❌ Firebase delete operation failed")
-            return False
-        
-        print("Firebase Backend: ALL TESTS PASSED ✓")
-        return True
-        
-    except Exception as e:
-        print(f"Firebase Backend: TEST FAILED ✗ - {e}")
         return False
 
 def main():
@@ -240,7 +161,6 @@ def main():
     results.append(test_configuration())
     results.append(test_storage_manager())
     results.append(test_pii_removal())
-    results.append(test_firebase_backend())
     
     # Summary
     print("\n" + "=" * 40)

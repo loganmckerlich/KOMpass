@@ -2,21 +2,16 @@
 
 ## Overview
 
-KOMpass now includes a comprehensive backend storage system that supports local, Amazon S3, and Firebase/Firestore storage with user data isolation, PII removal, and free tier compliance.
+KOMpass includes a comprehensive backend storage system that supports local and Amazon S3 storage with user data isolation, PII removal, and free tier compliance.
 
-Firebase is **highly recommended** for Streamlit Community Cloud deployments due to its generous free tier and easy setup.
+S3 is **recommended** for Streamlit Community Cloud deployments when cloud storage is desired.
 
 ## Architecture
 
 ### Storage Manager
 - **File**: `helper/storage/storage_manager.py`
-- **Purpose**: Unified interface for local, S3, and Firebase storage backends
+- **Purpose**: Unified interface for local and S3 storage backends
 - **Features**: Automatic fallback, user data isolation, caching
-
-### Firebase Storage Backend (Recommended)
-- **File**: `helper/storage/firebase_storage.py`
-- **Purpose**: Google Firebase/Firestore integration with generous free tier
-- **Features**: 1GB free storage, 50k reads/day, no credit card required
 
 ### S3 Storage Backend
 - **File**: `helper/storage/s3_storage.py`
@@ -29,21 +24,6 @@ Firebase is **highly recommended** for Streamlit Community Cloud deployments due
 - **Features**: Environment variable support, validation
 
 ## Data Organization
-
-### Firebase Storage Structure (Recommended)
-```
-Firebase Firestore Collections:
-├── users/{user_id}/routes/{doc_id}      # User route metadata
-├── users/{user_id}/fitness/{doc_id}     # User fitness metadata
-├── models/{doc_id}                      # Global ML model metadata
-└── training_data/{doc_id}               # Global training metadata
-
-Firebase Storage Bucket:
-├── users/{user_id}/routes/{filename}    # User route files
-├── users/{user_id}/fitness/{filename}   # User fitness files (PII removed)
-├── models/{filename}                    # Global ML model files
-└── training_data/{filename}             # Global training files
-```
 
 ### S3 Bucket Structure
 ```
@@ -74,32 +54,7 @@ saved_routes/
 
 ## Configuration
 
-### Firebase Storage (Recommended for Streamlit Cloud)
-
-Firebase offers several advantages over Amazon S3:
-- **More generous free tier**: 1GB storage + 50k reads/day vs S3's 5GB + 20k requests/month
-- **No credit card required** for free tier
-- **Easier setup** for Streamlit Community Cloud
-- **Real-time capabilities** for future features
-- **Better for structured data** like routes and fitness metrics
-
-```bash
-# Enable Firebase storage
-FIREBASE_STORAGE_ENABLED=true
-
-# Firebase Configuration
-FIREBASE_PROJECT_ID=your-firebase-project-id
-FIREBASE_STORAGE_BUCKET=your-project-id.appspot.com
-FIREBASE_SERVICE_ACCOUNT_KEY=path/to/serviceAccountKey.json
-# Or use JSON string for Streamlit secrets:
-# FIREBASE_SERVICE_ACCOUNT_JSON='{"type":"service_account",...}'
-
-# Storage Limits
-FIREBASE_MAX_FILE_SIZE_MB=50
-FIREBASE_MAX_USER_STORAGE_MB=100
-```
-
-### Amazon S3 Storage (Alternative)
+### Amazon S3 Storage (Recommended)
 
 ```bash
 # Enable S3 storage
@@ -117,7 +72,7 @@ S3_MAX_USER_STORAGE_MB=100
 ```
 
 ### Local Development
-For local development, simply set both `FIREBASE_STORAGE_ENABLED=false` and `S3_STORAGE_ENABLED=false` or omit the cloud storage environment variables. The system will automatically use local storage.
+For local development, simply set `S3_STORAGE_ENABLED=false` or omit the S3 environment variables. The system will automatically use local storage.
 
 ## Usage
 
@@ -186,23 +141,13 @@ python test_backend_storage.py
 ```
 
 Tests cover:
-- Configuration loading (S3 + Firebase)
+- Configuration loading (S3)
 - Storage manager functionality
 - PII removal
 - Local storage operations
 - S3 integration (when configured)
-- Firebase integration (when configured)
 
 ## Setup Demos
-
-### Firebase Setup
-```bash
-# View setup guide
-python demo_firebase_setup.py --setup
-
-# Test Firebase configuration
-python demo_firebase_setup.py
-```
 
 ### S3 Setup
 ```bash
@@ -212,20 +157,13 @@ python demo_s3_setup.py
 
 ## Free Tier Compliance
 
-### Firebase Free Tier (Recommended)
-- **Storage**: 1GB free
-- **Reads**: 50,000/day free  
-- **Writes**: 20,000/day free
-- **No credit card required**
-- **Real-time database capabilities**
-
-### AWS S3 Free Tier (Alternative)
+### AWS S3 Free Tier
 - **Storage**: 5GB free
 - **GET Requests**: 20,000/month free
 - **PUT Requests**: 2,000/month free
 - **Credit card required**
 
-Both systems include:
+The system includes:
 - **File Size Limit**: 50MB per file (configurable)
 - **User Storage Limit**: 100MB per user (configurable)
 - **Request Optimization**: Efficient operations
@@ -238,7 +176,7 @@ Both systems include:
 - **Permission Errors**: Clear error messages
 - **File Size Limits**: Validation before upload
 - **Storage Quotas**: User storage monitoring
-- **Backend Priority**: Firebase > S3 > Local (if multiple configured)
+- **Backend Priority**: S3 > Local (when configured)
 
 ## Migration
 
@@ -248,10 +186,9 @@ Legacy routes in the `saved_routes/` directory are automatically accessible thro
 ### Data Migration
 To migrate existing data or switch between backends:
 
-1. **Firebase to S3**: Configure both backends, data will be accessible from both
-2. **S3 to Firebase**: Configure both backends, new data saves to Firebase (preferred)
-3. **Local to Cloud**: Configure cloud backend, existing local data remains accessible
-4. Use the storage manager to explicitly migrate specific files if needed
+1. **S3 to Local**: Configure S3 backend, data will be accessible from both
+2. **Local to S3**: Configure S3 backend, new data saves to S3 (preferred)
+3. Use the storage manager to explicitly migrate specific files if needed
 
 ## Security
 

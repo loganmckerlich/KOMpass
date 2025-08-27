@@ -12,31 +12,26 @@ import hashlib
 from ..config.config import get_config
 from ..config.logging_config import get_logger, log_function_entry, log_function_exit
 from .s3_storage import S3StorageBackend
-from .firebase_storage import FirebaseStorageBackend
 
 logger = get_logger(__name__)
 
 
 class StorageManager:
-    """Unified storage manager supporting local, S3, and Firebase backends."""
+    """Unified storage manager supporting local and S3 backends."""
     
     def __init__(self):
         """Initialize storage manager with appropriate backend."""
         self.config = get_config()
         self.local_data_dir = self.config.app.data_directory
         self.s3_backend = None
-        self.firebase_backend = None
         
-        # Initialize cloud storage backends if configured
+        # Initialize S3 storage backend if configured
         if self.config.s3.enabled:
             self.s3_backend = S3StorageBackend(self.config.s3)
-            
-        if self.config.firebase.enabled:
-            self.firebase_backend = FirebaseStorageBackend(self.config.firebase)
         
         self._ensure_local_directories()
         
-        logger.info(f"Storage manager initialized - S3: {self.is_s3_enabled()}, Firebase: {self.is_firebase_enabled()}, Local: {self.local_data_dir}")
+        logger.info(f"Storage manager initialized - S3: {self.is_s3_enabled()}, Local: {self.local_data_dir}")
     
     def _ensure_local_directories(self):
         """Ensure local data directories exist."""
@@ -57,19 +52,9 @@ class StorageManager:
             self.s3_backend.is_available()
         )
     
-    def is_firebase_enabled(self) -> bool:
-        """Check if Firebase storage is enabled and available."""
-        return (
-            self.config.firebase.enabled and 
-            self.firebase_backend is not None and 
-            self.firebase_backend.is_available()
-        )
-    
     def get_preferred_backend(self) -> str:
-        """Get the preferred cloud storage backend."""
-        if self.is_firebase_enabled():
-            return "firebase"
-        elif self.is_s3_enabled():
+        """Get the preferred storage backend."""
+        if self.is_s3_enabled():
             return "s3"
         else:
             return "local"
@@ -87,7 +72,7 @@ class StorageManager:
     
     def save_data(self, data: Any, user_id: Optional[str], data_type: str, filename: str) -> bool:
         """
-        Save data using preferred backend (Firebase/S3 if available, local fallback).
+        Save data using preferred backend (S3 if available, local fallback).
         
         Args:
             data: Data to save (dict, string, or bytes)
@@ -108,17 +93,7 @@ class StorageManager:
         
         success = False
         
-        # Try Firebase first if enabled
-        if self.is_firebase_enabled():
-            success = self.firebase_backend.save_file(data, user_id, data_type, filename)
-            if success:
-                logger.info(f"Data saved to Firebase: {data_type}/{filename}")
-                log_function_exit(logger, "save_data", "success-firebase")
-                return True
-            else:
-                logger.warning("Firebase save failed, trying S3")
-        
-        # Try S3 if Firebase failed or not available
+        # Try S3 first if enabled
         if self.is_s3_enabled():
             success = self.s3_backend.save_file(data, user_id, data_type, filename)
             if success:
@@ -183,15 +158,7 @@ class StorageManager:
             filename=filename
         )
         
-        # Try Firebase first if enabled
-        if self.is_firebase_enabled():
-            data = self.firebase_backend.load_file(user_id, data_type, filename)
-            if data is not None:
-                logger.debug(f"Data loaded from Firebase: {data_type}/{filename}")
-                log_function_exit(logger, "load_data", "success=True, backend=firebase")
-                return data
-        
-        # Try S3 if Firebase not available or data not found
+        # Try S3 first if enabled
         if self.is_s3_enabled():
             data = self.s3_backend.load_file(user_id, data_type, filename)
             if data is not None:
@@ -251,17 +218,12 @@ class StorageManager:
         
         files = []
         
-        # Get from Firebase if enabled
-        if self.is_firebase_enabled():
-            files = self.firebase_backend.list_files(user_id, data_type)
-            logger.debug(f"Listed {len(files)} files from Firebase")
-        
-        # Get from S3 if enabled and Firebase didn't return data
-        if not files and self.is_s3_enabled():
+        # Get from S3 if enabled
+        if self.is_s3_enabled():
             files = self.s3_backend.list_files(user_id, data_type)
             logger.debug(f"Listed {len(files)} files from S3")
         
-        # Merge with local files if cloud storage not available or as backup
+        # Merge with local files if S3 not available or as backup
         local_files = self._list_local_files(user_id, data_type)
         
         # Merge and deduplicate
@@ -323,12 +285,6 @@ class StorageManager:
         
         success = True
         
-        # Delete from Firebase if enabled
-        if self.is_firebase_enabled():
-            firebase_success = self.firebase_backend.delete_file(user_id, data_type, filename)
-            if firebase_success:
-                logger.info(f"Data deleted from Firebase: {data_type}/{filename}")
-        
         # Delete from S3 if enabled
         if self.is_s3_enabled():
             s3_success = self.s3_backend.delete_file(user_id, data_type, filename)
@@ -342,7 +298,6 @@ class StorageManager:
         
         # Consider it successful if deleted from at least one location
         overall_success = (
-            (self.is_firebase_enabled() and firebase_success) or
             (self.is_s3_enabled() and s3_success) or 
             local_success
         )
@@ -366,19 +321,12 @@ class StorageManager:
     def get_storage_info(self) -> Dict[str, Any]:
         """Get storage backend information and status."""
         info = {
-            "firebase_enabled": self.is_firebase_enabled(),
-            "firebase_configured": self.config.firebase.is_configured() if self.config.firebase.enabled else False,
             "s3_enabled": self.is_s3_enabled(),
             "s3_configured": self.config.s3.is_configured() if self.config.s3.enabled else False,
             "local_directory": self.local_data_dir,
             "preferred_backend": self.get_preferred_backend(),
             "backends_available": []
         }
-        
-        if self.is_firebase_enabled():
-            info["backends_available"].append("firebase")
-            info["firebase_project"] = self.config.firebase.project_id
-            info["firebase_bucket"] = self.config.firebase.storage_bucket
         
         if self.is_s3_enabled():
             info["backends_available"].append("s3")
@@ -406,13 +354,6 @@ class StorageManager:
             "total_size_mb": 0,
             "backends": {}
         }
-        
-        # Get Firebase usage if enabled
-        if self.is_firebase_enabled():
-            firebase_usage = self.firebase_backend.get_user_storage_usage(user_id)
-            if firebase_usage:
-                usage["backends"]["firebase"] = firebase_usage
-                usage["total_size_mb"] += firebase_usage.get("total_size_mb", 0)
         
         # Get S3 usage if enabled
         if self.is_s3_enabled():
