@@ -94,7 +94,7 @@ class S3StorageBackend:
     
     def save_file(self, data: Any, user_id: Optional[str], data_type: str, filename: str) -> bool:
         """
-        Save data to S3.
+        Save data to S3 with automatic FIFO cleanup.
         
         Args:
             data: Data to save (dict for JSON, bytes for binary)
@@ -112,6 +112,10 @@ class S3StorageBackend:
             return False
         
         try:
+            # Check if auto-cleanup is needed before saving
+            if self.config.auto_cleanup_enabled and user_id:
+                self._check_and_cleanup_storage(user_id, data_type)
+            
             key = self._build_key(user_id, data_type, filename)
             
             # Convert data to appropriate format
@@ -355,4 +359,157 @@ class S3StorageBackend:
         except Exception as e:
             logger.error(f"Failed to get user storage usage: {e}")
             log_function_exit(logger, "get_user_storage_usage", f"success=False, error={str(e)}")
+            return {}
+    
+    def _check_and_cleanup_storage(self, user_id: str, data_type: str):
+        """
+        Check storage usage and perform FIFO cleanup if needed.
+        
+        Args:
+            user_id: User ID
+            data_type: Type of data being saved
+        """
+        log_function_entry(logger, "_check_and_cleanup_storage", user_id=user_id, data_type=data_type)
+        
+        try:
+            # Check user storage usage
+            usage_info = self.get_user_storage_usage(user_id)
+            if not usage_info:
+                return
+            
+            usage_percent = usage_info.get('usage_percent', 0)
+            
+            # Perform cleanup if threshold exceeded
+            if usage_percent >= self.config.cleanup_threshold_percent:
+                logger.info(f"Storage threshold exceeded for user {user_id}: {usage_percent:.1f}% >= {self.config.cleanup_threshold_percent}%")
+                self._perform_fifo_cleanup(user_id, data_type)
+            
+            # Also check total bucket usage
+            self._check_total_bucket_usage()
+            
+        except Exception as e:
+            logger.error(f"Error in storage cleanup check: {e}")
+    
+    def _perform_fifo_cleanup(self, user_id: str, data_type: str):
+        """
+        Perform FIFO cleanup for user data type.
+        
+        Args:
+            user_id: User ID
+            data_type: Type of data to clean up
+        """
+        log_function_entry(logger, "_perform_fifo_cleanup", user_id=user_id, data_type=data_type)
+        
+        try:
+            # Get files for this user and data type, sorted by last modified (oldest first)
+            files = self.list_files(user_id, data_type)
+            if len(files) <= self.config.min_files_to_keep:
+                logger.info(f"Skipping cleanup - only {len(files)} files, minimum is {self.config.min_files_to_keep}")
+                return
+            
+            # Sort by last modified (oldest first)
+            files.sort(key=lambda x: x.get('last_modified', ''))
+            
+            # Calculate how many files to remove (keep at least min_files_to_keep)
+            files_to_remove = max(0, len(files) - self.config.min_files_to_keep)
+            
+            # Remove oldest files until we're under threshold
+            removed_count = 0
+            for i in range(min(files_to_remove, len(files) // 2)):  # Don't remove more than half
+                file_info = files[i]
+                filename = file_info.get('filename')
+                if filename:
+                    success = self.delete_file(user_id, data_type, filename)
+                    if success:
+                        removed_count += 1
+                        logger.info(f"FIFO cleanup removed: {filename} (age: {file_info.get('last_modified', 'unknown')})")
+                    
+                    # Check if we've freed enough space
+                    if removed_count >= 3:  # Remove at most 3 files per cleanup
+                        break
+            
+            logger.info(f"FIFO cleanup completed for {user_id}/{data_type}: removed {removed_count} files")
+            
+        except Exception as e:
+            logger.error(f"Error in FIFO cleanup: {e}")
+    
+    def _check_total_bucket_usage(self):
+        """Check total bucket usage and log warnings if approaching limits."""
+        try:
+            # Get bucket size
+            response = self.s3_client.list_objects_v2(Bucket=self.config.bucket_name)
+            total_size_bytes = sum(obj.get('Size', 0) for obj in response.get('Contents', []))
+            total_size_gb = total_size_bytes / (1024 * 1024 * 1024)
+            
+            usage_percent = (total_size_gb / self.config.max_total_storage_gb) * 100
+            
+            if usage_percent >= 80:
+                logger.warning(f"Total S3 bucket usage is high: {total_size_gb:.2f}GB / {self.config.max_total_storage_gb}GB ({usage_percent:.1f}%)")
+            elif usage_percent >= 90:
+                logger.error(f"Total S3 bucket usage is critical: {total_size_gb:.2f}GB / {self.config.max_total_storage_gb}GB ({usage_percent:.1f}%)")
+            
+        except Exception as e:
+            logger.error(f"Error checking total bucket usage: {e}")
+    
+    def get_bucket_usage_info(self) -> Dict[str, Any]:
+        """
+        Get comprehensive bucket usage information.
+        
+        Returns:
+            Bucket usage statistics
+        """
+        log_function_entry(logger, "get_bucket_usage_info")
+        
+        if not self.is_available():
+            return {}
+        
+        try:
+            response = self.s3_client.list_objects_v2(Bucket=self.config.bucket_name)
+            objects = response.get('Contents', [])
+            
+            total_size_bytes = sum(obj.get('Size', 0) for obj in objects)
+            total_size_gb = total_size_bytes / (1024 * 1024 * 1024)
+            
+            # Count by data type
+            data_type_stats = {}
+            user_stats = {}
+            
+            for obj in objects:
+                key_parts = obj['Key'].split('/')
+                if len(key_parts) >= 3 and key_parts[0] == 'users':
+                    user_id = key_parts[1]
+                    data_type = key_parts[2]
+                    
+                    # User stats
+                    if user_id not in user_stats:
+                        user_stats[user_id] = {'count': 0, 'size_bytes': 0}
+                    user_stats[user_id]['count'] += 1
+                    user_stats[user_id]['size_bytes'] += obj['Size']
+                    
+                    # Data type stats
+                    if data_type not in data_type_stats:
+                        data_type_stats[data_type] = {'count': 0, 'size_bytes': 0}
+                    data_type_stats[data_type]['count'] += 1
+                    data_type_stats[data_type]['size_bytes'] += obj['Size']
+            
+            usage_info = {
+                'bucket_name': self.config.bucket_name,
+                'total_objects': len(objects),
+                'total_size_bytes': total_size_bytes,
+                'total_size_gb': round(total_size_gb, 3),
+                'max_size_gb': self.config.max_total_storage_gb,
+                'usage_percent': round((total_size_gb / self.config.max_total_storage_gb) * 100, 1),
+                'data_type_stats': data_type_stats,
+                'user_count': len(user_stats),
+                'cleanup_enabled': self.config.auto_cleanup_enabled,
+                'cleanup_threshold': self.config.cleanup_threshold_percent
+            }
+            
+            log_function_exit(logger, "get_bucket_usage_info", 
+                f"success=True, size_gb={total_size_gb:.3f}, usage_percent={usage_info['usage_percent']}")
+            return usage_info
+            
+        except Exception as e:
+            logger.error(f"Failed to get bucket usage info: {e}")
+            log_function_exit(logger, "get_bucket_usage_info", f"success=False, error={str(e)}")
             return {}

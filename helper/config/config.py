@@ -83,6 +83,11 @@ class S3Config:
     enabled: bool = False
     max_file_size_mb: int = 50  # Free tier limit consideration
     max_user_storage_mb: int = 100  # Per-user storage limit
+    # FIFO Configuration
+    cleanup_threshold_percent: int = 70  # Start cleanup at 70% of limit
+    auto_cleanup_enabled: bool = True  # Enable automatic FIFO cleanup
+    min_files_to_keep: int = 5  # Minimum files to preserve per user/data_type
+    max_total_storage_gb: float = 4.5  # Maximum total bucket usage (90% of 5GB free tier)
     
     def is_configured(self) -> bool:
         """Check if S3 is properly configured."""
@@ -202,11 +207,17 @@ class ConfigManager:
             aws_region=os.environ.get("AWS_REGION", "us-east-1"),
             enabled=os.environ.get("S3_STORAGE_ENABLED", "false").lower() == "true",
             max_file_size_mb=int(os.environ.get("S3_MAX_FILE_SIZE_MB", "50")),
-            max_user_storage_mb=int(os.environ.get("S3_MAX_USER_STORAGE_MB", "100"))
+            max_user_storage_mb=int(os.environ.get("S3_MAX_USER_STORAGE_MB", "100")),
+            # FIFO Configuration
+            cleanup_threshold_percent=int(os.environ.get("S3_CLEANUP_THRESHOLD_PERCENT", "70")),
+            auto_cleanup_enabled=os.environ.get("S3_AUTO_CLEANUP_ENABLED", "true").lower() == "true",
+            min_files_to_keep=int(os.environ.get("S3_MIN_FILES_TO_KEEP", "5")),
+            max_total_storage_gb=float(os.environ.get("S3_MAX_TOTAL_STORAGE_GB", "4.5"))
         )
         
         if config.enabled:
             logger.info(f"S3 storage enabled - Bucket: {config.bucket_name}, Region: {config.aws_region}")
+            logger.info(f"S3 FIFO enabled: {config.auto_cleanup_enabled}, Threshold: {config.cleanup_threshold_percent}%")
         else:
             logger.debug("S3 storage disabled - using local storage")
         

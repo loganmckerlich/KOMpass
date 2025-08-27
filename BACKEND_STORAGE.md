@@ -2,26 +2,32 @@
 
 ## Overview
 
-KOMpass includes a comprehensive backend storage system that supports local and Amazon S3 storage with user data isolation, PII removal, and free tier compliance.
+KOMpass includes a comprehensive backend storage system that supports local and Amazon S3 storage with user data isolation, PII removal, FIFO management, and AWS free tier compliance.
 
-S3 is **recommended** for Streamlit Community Cloud deployments when cloud storage is desired.
+S3 is **recommended** for Streamlit Community Cloud deployments to maximize cloud storage usage and avoid local storage limits.
 
 ## Architecture
 
 ### Storage Manager
 - **File**: `helper/storage/storage_manager.py`
 - **Purpose**: Unified interface for local and S3 storage backends
-- **Features**: Automatic fallback, user data isolation, caching
+- **Features**: S3 priority, automatic fallback, user data isolation, data migration
 
 ### S3 Storage Backend
 - **File**: `helper/storage/s3_storage.py`
-- **Purpose**: Amazon S3 integration with proper error handling
-- **Features**: Free tier compliance, file size limits, metadata tracking
+- **Purpose**: Amazon S3 integration with FIFO cleanup and monitoring
+- **Features**: Automatic FIFO cleanup, free tier compliance, usage monitoring
+
+### FIFO Storage Management
+- **Automatic Cleanup**: Removes oldest files when storage approaches limits
+- **Threshold**: Configurable cleanup at 70% of storage limit (default)
+- **Preservation**: Keeps minimum number of files per user/data type
+- **Monitoring**: Real-time bucket usage tracking and alerts
 
 ### Configuration
 - **File**: `helper/config/config.py` (extended)
-- **Purpose**: Storage configuration management
-- **Features**: Environment variable support, validation
+- **Purpose**: Storage configuration with FIFO settings
+- **Features**: Environment variable support, validation, FIFO tuning
 
 ## Data Organization
 
@@ -32,8 +38,8 @@ kompass-data/
 ├── training_data/    # Global training datasets
 └── users/
     └── {user_id}/
-        ├── routes/   # User-specific saved routes
-        └── fitness/  # User fitness data (PII removed)
+        ├── routes/   # User-specific saved routes (FIFO managed)
+        └── fitness/  # User fitness data (PII removed, FIFO managed)
 ```
 
 ### Local Storage Structure
@@ -69,6 +75,12 @@ AWS_REGION=us-east-1
 # Storage Limits (free tier compliance)
 S3_MAX_FILE_SIZE_MB=50
 S3_MAX_USER_STORAGE_MB=100
+
+# FIFO Management Settings
+S3_CLEANUP_THRESHOLD_PERCENT=70        # Start cleanup at 70% usage
+S3_AUTO_CLEANUP_ENABLED=true           # Enable automatic FIFO cleanup
+S3_MIN_FILES_TO_KEEP=5                 # Minimum files to preserve per user
+S3_MAX_TOTAL_STORAGE_GB=4.5            # Max bucket size (90% of 5GB free tier)
 ```
 
 ### Local Development
@@ -107,6 +119,46 @@ saved_data = processor.load_rider_data(user_id)
 # Get rider data history
 history = processor.get_rider_data_history(user_id)
 ```
+
+## FIFO Storage Management
+
+The system includes automatic FIFO (First In, First Out) cleanup to stay within AWS free tier limits and avoid charges.
+
+### How FIFO Works
+1. **Monitoring**: Continuous tracking of user and total bucket storage usage
+2. **Threshold**: Cleanup triggers at 70% of storage limit (configurable)
+3. **Selection**: Removes oldest files first, preserving newest data
+4. **Preservation**: Always keeps minimum number of files per user/data type
+5. **Safety**: Never removes more than half of files in one cleanup cycle
+
+### Configuration
+```bash
+S3_CLEANUP_THRESHOLD_PERCENT=70    # Trigger cleanup at 70% usage
+S3_AUTO_CLEANUP_ENABLED=true       # Enable automatic cleanup
+S3_MIN_FILES_TO_KEEP=5             # Minimum files to preserve
+S3_MAX_TOTAL_STORAGE_GB=4.5        # Total bucket limit (90% of 5GB)
+```
+
+### Monitoring and Management
+```bash
+# Check storage status and usage
+python demo_storage_management.py
+
+# Migrate local data to S3 (maximize cloud usage)
+python demo_storage_management.py --migrate
+
+# Detailed monitoring with alerts
+python demo_storage_management.py --monitor
+
+# Configuration verification
+python demo_storage_management.py --config
+```
+
+### Storage Priority
+1. **S3 First**: All data saved to S3 when available
+2. **Local Cleanup**: Local copies removed after successful S3 upload
+3. **Maximum Cloud Usage**: Prioritizes S3 to avoid Streamlit storage limits
+4. **Fallback**: Local storage only when S3 unavailable
 
 ## PII Removal
 
@@ -153,6 +205,9 @@ Tests cover:
 ```bash
 # Test S3 configuration
 python demo_s3_setup.py
+
+# Storage management and monitoring
+python demo_storage_management.py
 ```
 
 ## Free Tier Compliance
@@ -167,7 +222,9 @@ The system includes:
 - **File Size Limit**: 50MB per file (configurable)
 - **User Storage Limit**: 100MB per user (configurable)
 - **Request Optimization**: Efficient operations
-- **Cleanup Policies**: Automatic old data management (future feature)
+- **FIFO Cleanup**: Automatic old data removal at 70% usage
+- **Total Bucket Limit**: 4.5GB (90% of 5GB free tier)
+- **Usage Monitoring**: Real-time storage tracking and alerts
 
 ## Error Handling
 
@@ -184,7 +241,31 @@ The system includes:
 Legacy routes in the `saved_routes/` directory are automatically accessible through the storage manager for backward compatibility.
 
 ### Data Migration
-To migrate existing data or switch between backends:
+The system includes automatic migration tools to move data to S3:
+
+```python
+from helper.storage.storage_manager import get_storage_manager
+
+manager = get_storage_manager()
+
+# Migrate all local data to S3
+results = manager.migrate_local_to_s3()
+
+# Migrate specific user data
+results = manager.migrate_local_to_s3(user_id="specific_user")
+```
+
+Command line migration:
+```bash
+# Migrate all local data to S3
+python demo_storage_management.py --migrate
+```
+
+This automatically:
+- Moves existing local data to S3
+- Removes local copies after successful upload
+- Avoids duplicates if data already exists in S3
+- Maximizes cloud storage usage
 
 1. **S3 to Local**: Configure S3 backend, data will be accessible from both
 2. **Local to S3**: Configure S3 backend, new data saves to S3 (preferred)

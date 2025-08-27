@@ -72,7 +72,8 @@ class StorageManager:
     
     def save_data(self, data: Any, user_id: Optional[str], data_type: str, filename: str) -> bool:
         """
-        Save data using preferred backend (S3 if available, local fallback).
+        Save data using S3 storage (priority) with local fallback.
+        Maximizes S3 usage for cloud storage compliance.
         
         Args:
             data: Data to save (dict, string, or bytes)
@@ -93,17 +94,19 @@ class StorageManager:
         
         success = False
         
-        # Try S3 first if enabled
+        # ALWAYS try S3 first if enabled to maximize cloud storage usage
         if self.is_s3_enabled():
             success = self.s3_backend.save_file(data, user_id, data_type, filename)
             if success:
                 logger.info(f"Data saved to S3: {data_type}/{filename}")
+                # Remove from local storage if it exists to avoid duplication
+                self._delete_local(user_id, data_type, filename)
                 log_function_exit(logger, "save_data", "success-s3")
                 return True
             else:
                 logger.warning("S3 save failed, falling back to local storage")
         
-        # Fallback to local storage
+        # Fallback to local storage only if S3 fails or is disabled
         success = self._save_local(data, user_id, data_type, filename)
         backend = "local"
         
@@ -332,6 +335,13 @@ class StorageManager:
             info["backends_available"].append("s3")
             info["s3_bucket"] = self.config.s3.bucket_name
             info["s3_region"] = self.config.s3.aws_region
+            info["s3_auto_cleanup"] = self.config.s3.auto_cleanup_enabled
+            info["s3_cleanup_threshold"] = self.config.s3.cleanup_threshold_percent
+            
+            # Get S3 bucket usage info
+            bucket_usage = self.s3_backend.get_bucket_usage_info()
+            if bucket_usage:
+                info["s3_usage"] = bucket_usage
         
         info["backends_available"].append("local")
         
@@ -408,6 +418,98 @@ class StorageManager:
         except Exception as e:
             logger.error(f"Failed to get local storage usage: {e}")
             return {}
+
+
+    def migrate_local_to_s3(self, user_id: Optional[str] = None) -> Dict[str, Any]:
+        """
+        Migrate local data to S3 to maximize cloud storage usage.
+        
+        Args:
+            user_id: User ID to migrate (None for all users)
+            
+        Returns:
+            Migration results
+        """
+        log_function_entry(logger, "migrate_local_to_s3", user_id=user_id)
+        
+        if not self.is_s3_enabled():
+            logger.warning("S3 not enabled, cannot migrate data")
+            return {"success": False, "error": "S3 not enabled"}
+        
+        results = {
+            "success": True,
+            "migrated_files": 0,
+            "failed_files": 0,
+            "total_size_mb": 0,
+            "errors": []
+        }
+        
+        try:
+            data_types = ['routes', 'fitness', 'models', 'training_data']
+            
+            for data_type in data_types:
+                # Get list of users to migrate
+                users_to_migrate = []
+                if user_id:
+                    users_to_migrate = [user_id]
+                else:
+                    # Find all users with local data
+                    data_type_dir = os.path.join(self.local_data_dir, data_type)
+                    if os.path.exists(data_type_dir):
+                        users_to_migrate = [d for d in os.listdir(data_type_dir) 
+                                          if os.path.isdir(os.path.join(data_type_dir, d))]
+                
+                # Migrate each user's data
+                for uid in users_to_migrate:
+                    local_files = self._list_local_files(uid, data_type)
+                    
+                    for file_info in local_files:
+                        try:
+                            filename = file_info['filename']
+                            
+                            # Check if file already exists in S3
+                            s3_data = self.s3_backend.load_file(uid, data_type, filename)
+                            if s3_data is not None:
+                                logger.debug(f"File already exists in S3, skipping: {filename}")
+                                # Remove local copy to avoid duplication
+                                self._delete_local(uid, data_type, filename)
+                                continue
+                            
+                            # Load local data
+                            local_data = self._load_local(uid, data_type, filename)
+                            if local_data is None:
+                                continue
+                            
+                            # Save to S3
+                            success = self.s3_backend.save_file(local_data, uid, data_type, filename)
+                            if success:
+                                results["migrated_files"] += 1
+                                results["total_size_mb"] += file_info.get('size_mb', 0)
+                                
+                                # Remove local copy after successful S3 upload
+                                self._delete_local(uid, data_type, filename)
+                                logger.info(f"Migrated to S3: {uid}/{data_type}/{filename}")
+                            else:
+                                results["failed_files"] += 1
+                                results["errors"].append(f"Failed to migrate {filename}")
+                                
+                        except Exception as e:
+                            results["failed_files"] += 1
+                            error_msg = f"Error migrating {filename}: {str(e)}"
+                            results["errors"].append(error_msg)
+                            logger.error(error_msg)
+            
+            logger.info(f"Migration completed: {results['migrated_files']} files migrated, "
+                       f"{results['failed_files']} failed, {results['total_size_mb']:.2f}MB total")
+            
+        except Exception as e:
+            results["success"] = False
+            results["errors"].append(f"Migration error: {str(e)}")
+            logger.error(f"Migration error: {e}")
+        
+        log_function_exit(logger, "migrate_local_to_s3", 
+                         f"success={results['success']}, migrated={results['migrated_files']}")
+        return results
 
 
 # Global storage manager instance
