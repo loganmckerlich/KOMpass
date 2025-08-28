@@ -185,8 +185,15 @@ class AuthenticationManager:
                 logger.info("Fetching comprehensive rider fitness data")
                 try:
                     rider_data = self.rider_data_processor.fetch_comprehensive_rider_data(access_token)
-                    st.session_state["rider_fitness_data"] = rider_data
-                    logger.info("Successfully fetched and cached comprehensive rider fitness data")
+                    
+                    # Store only essential rider fitness metrics to minimize session state usage
+                    if rider_data and isinstance(rider_data, dict):
+                        essential_metrics = self._extract_essential_fitness_metrics(rider_data)
+                        st.session_state["rider_fitness_data"] = essential_metrics
+                        logger.info("Successfully fetched and cached essential rider fitness data")
+                    else:
+                        st.session_state["rider_fitness_data"] = None
+                        
                 except Exception as e:
                     log_error(logger, e, "Failed to fetch comprehensive rider data")
                     # Don't fail the whole authentication if rider data fails
@@ -277,6 +284,56 @@ class AuthenticationManager:
             self.logout()
             return False
     
+    def _extract_essential_fitness_metrics(self, rider_data: Dict) -> Dict:
+        """Extract only essential fitness metrics to minimize session state usage."""
+        essential_metrics = {}
+        
+        try:
+            # Keep high-level summary data only
+            if 'summary' in rider_data:
+                essential_metrics['summary'] = rider_data['summary']
+                
+            # Keep recent performance trends (limit to last 10 activities)
+            if 'recent_activities' in rider_data:
+                recent = rider_data['recent_activities']
+                if isinstance(recent, list) and len(recent) > 10:
+                    essential_metrics['recent_activities'] = recent[-10:]
+                else:
+                    essential_metrics['recent_activities'] = recent
+                    
+            # Keep current fitness metrics only
+            if 'current_fitness' in rider_data:
+                essential_metrics['current_fitness'] = rider_data['current_fitness']
+                
+            # Keep weekly stats summary (not detailed daily data)
+            if 'weekly_stats' in rider_data:
+                weekly = rider_data['weekly_stats']
+                if isinstance(weekly, dict):
+                    essential_metrics['weekly_stats'] = {
+                        'distance': weekly.get('distance'),
+                        'elevation': weekly.get('elevation'),
+                        'time': weekly.get('time'),
+                        'activities': weekly.get('activities')
+                    }
+                    
+            # Keep power/heart rate zones summary only (not detailed data)
+            if 'power_zones' in rider_data:
+                power_zones = rider_data['power_zones']
+                if isinstance(power_zones, dict):
+                    essential_metrics['power_zones'] = {
+                        'ftp': power_zones.get('ftp'),
+                        'zones': power_zones.get('zones', [])[:7]  # Standard 7 zones only
+                    }
+                    
+            logger.debug(f"Extracted essential metrics from rider data: {len(essential_metrics)} categories")
+            
+        except Exception as e:
+            logger.warning(f"Error extracting essential fitness metrics: {e}")
+            # Return minimal data if extraction fails
+            essential_metrics = {'summary': {'error': 'Data extraction failed'}}
+            
+        return essential_metrics
+
     def logout(self):
         """Clear authentication state and log out user."""
         log_function_entry(logger, "logout")
