@@ -13,10 +13,10 @@ Note: This module has been refactored to use smaller, focused components.
 import streamlit as st
 from typing import Dict, Any
 
-from .components.header_layout import HeaderAndLayout
-from .components.home_page import HomePage
-from .components.route_upload import RouteUpload
-from .components.route_analysis import RouteAnalysis
+from .header_layout import HeaderAndLayout
+from .home_page import HomePage
+from .route_upload import RouteUpload
+from .route_analysis import RouteAnalysis
 from ..config.logging_config import get_logger
 
 
