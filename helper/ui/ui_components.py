@@ -190,6 +190,36 @@ class UIComponents:
         # Store unit preference in session state
         st.session_state.use_imperial = use_imperial
         
+        # Session state optimizer (lightweight monitoring)
+        with st.expander("⚙️ Memory Management", expanded=False):
+            from ..utils.session_state_optimizer import get_session_state_optimizer
+            optimizer = get_session_state_optimizer()
+            
+            # Show session state stats
+            stats = optimizer.get_session_state_size()
+            if 'error' not in stats:
+                st.write(f"**Session items:** {stats['total_keys']}")
+                st.write(f"**Estimated size:** {stats['estimated_total_size_mb']:.1f} MB")
+                
+                # Show large objects if any
+                if stats['large_objects']:
+                    st.write("**Large objects:**")
+                    for key, size in stats['large_objects'][:3]:  # Show first 3
+                        st.write(f"• {key}: {size/(1024*1024):.1f} MB")
+                
+                # Cleanup button
+                if st.button("🧹 Clean Up Memory", help="Remove old cached data to free up memory"):
+                    cleanup_results = optimizer.full_cleanup()
+                    total_removed = (len(cleanup_results['analysis_dataframes_removed']) + 
+                                   len(cleanup_results['large_objects_removed']) + 
+                                   len(cleanup_results['lru_items_removed']))
+                    if total_removed > 0:
+                        st.success(f"✅ Cleaned up {total_removed} cached items")
+                    else:
+                        st.info("ℹ️ No cleanup needed")
+            else:
+                st.write(f"Memory stats unavailable: {stats['error']}")
+        
         logger.debug(f"User selected page: {selected_page}, Imperial units: {use_imperial}")
         return selected_page
     
@@ -355,13 +385,24 @@ class UIComponents:
                     stats = self.route_processor.calculate_route_statistics(
                         route_data_hash,
                         route_data, 
-                        include_traffic_analysis=False  # Traffic analysis remains optional for performance
+                        include_traffic_analysis=False,  # Traffic analysis remains optional for performance
+                        show_progress=True  # Enable progress tracking
                     )
                     processing_time = time.time() - start_time
                 
                 # Cache the processed data in session state
                 st.session_state[cache_key] = route_data
                 st.session_state[stats_key] = stats
+                
+                # Apply LRU limits to prevent session state bloat
+                try:
+                    from ..utils.session_state_optimizer import get_session_state_optimizer
+                    optimizer = get_session_state_optimizer()
+                    removed_items = optimizer.apply_lru_limits()
+                    if removed_items:
+                        logger.debug(f"Applied LRU limits: removed {len(removed_items)} old cached items")
+                except Exception as e:
+                    logger.warning(f"LRU cleanup failed: {e}")
                 
                 logger.info(f"Route processing completed in {processing_time:.2f}s")
             
@@ -581,13 +622,24 @@ class UIComponents:
                     stats = self.route_processor.calculate_route_statistics(
                         route_data_hash,
                         route_data, 
-                        include_traffic_analysis=False  # Traffic analysis remains optional for performance
+                        include_traffic_analysis=False,  # Traffic analysis remains optional for performance
+                        show_progress=True  # Enable progress tracking for Strava routes too
                     )
                     processing_time = time.time() - start_time
                 
                 # Cache the processed data in session state (same as uploaded files)
                 st.session_state[cache_key] = route_data
                 st.session_state[stats_key] = stats
+                
+                # Apply LRU limits to prevent session state bloat
+                try:
+                    from ..utils.session_state_optimizer import get_session_state_optimizer
+                    optimizer = get_session_state_optimizer()
+                    removed_items = optimizer.apply_lru_limits()
+                    if removed_items:
+                        logger.debug(f"Applied LRU limits: removed {len(removed_items)} old cached items")
+                except Exception as e:
+                    logger.warning(f"LRU cleanup failed: {e}")
                 
                 logger.info(f"Strava activity processing completed in {processing_time:.2f}s")
                 
@@ -708,11 +760,9 @@ class UIComponents:
             route_data_hash = hashlib.md5(str(route_data).encode()).hexdigest()
             df = self.route_processor.create_analysis_dataframe(route_data_hash, route_data, stats)
             if not df.empty:
-                # Cache the dataframe for ML use
+                # Cache only the latest dataframe to avoid duplicates
                 route_name = route_data.get('metadata', {}).get('name', filename)
-                cache_key = f"analysis_dataframe_{hash(str(route_data))}"
-                st.session_state[cache_key] = df
-                st.session_state['latest_analysis_dataframe'] = df  # Always keep latest
+                st.session_state['latest_analysis_dataframe'] = df  # Only store latest
                 logger.info(f"Cached comprehensive dataframe for route: {route_name}")
         except Exception as e:
             logger.warning(f"Could not cache dataframe: {e}")
@@ -748,7 +798,8 @@ class UIComponents:
                     stats = self.route_processor.calculate_route_statistics(
                         route_data_hash,
                         route_data, 
-                        include_traffic_analysis=True
+                        include_traffic_analysis=True,
+                        show_progress=True  # Show progress for traffic analysis
                     )
                     logger.info("Traffic analysis completed automatically")
             except Exception as e:
@@ -761,11 +812,9 @@ class UIComponents:
             df = self.route_processor.create_analysis_dataframe(route_data_hash, route_data, stats)
             
             if not df.empty:
-                # Cache the dataframe for ML use
+                # Cache only the latest dataframe to avoid storage bloat
                 route_name = route_data.get('metadata', {}).get('name', filename)
-                cache_key = f"analysis_dataframe_{route_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-                st.session_state[cache_key] = df
-                st.session_state['latest_analysis_dataframe'] = df
+                st.session_state['latest_analysis_dataframe'] = df  # Only store latest
                 logger.info(f"Comprehensive dataframe automatically cached with {len(df)} points")
         except Exception as e:
             log_error(logger, e, "Error generating automatic comprehensive dataframe")
@@ -914,7 +963,8 @@ class UIComponents:
                 full_stats = self.route_processor.calculate_route_statistics(
                     route_data_hash,
                     route_data, 
-                    include_traffic_analysis=True
+                    include_traffic_analysis=True,
+                    show_progress=True  # Show progress for async traffic analysis
                 )
                 
                 # Update the session state with new stats
@@ -942,11 +992,9 @@ class UIComponents:
                 df = self.route_processor.create_analysis_dataframe(route_data_hash, route_data, stats)
                 
                 if not df.empty:
-                    # Cache the dataframe for ML use
+                    # Cache only the latest dataframe to prevent session state bloat
                     route_name = route_data.get('metadata', {}).get('name', 'route')
-                    cache_key = f"analysis_dataframe_{route_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-                    st.session_state[cache_key] = df
-                    st.session_state['latest_analysis_dataframe'] = df  # Always keep latest
+                    st.session_state['latest_analysis_dataframe'] = df  # Only store latest
                     
                     st.success(f"✅ Detailed analysis dataframe created and cached for ML use!")
                     
@@ -1548,7 +1596,19 @@ class UIComponents:
                 try:
                     route_data_hash = hashlib.md5(str(route_data).encode()).hexdigest()
                     route_map = self.route_processor.create_route_map(route_data_hash, route_data, stats)
-                    # Cache the map in session state
+                    
+                    # Clean up old maps before caching new one (LRU-style)
+                    map_keys = [k for k in st.session_state.keys() if k.startswith('route_map_')]
+                    if len(map_keys) >= 2:  # Keep only 1 most recent map
+                        # Remove oldest map(s)
+                        for old_key in map_keys[:-1]:
+                            try:
+                                del st.session_state[old_key]
+                                logger.debug(f"Removed old route map cache: {old_key}")
+                            except Exception:
+                                pass
+                    
+                    # Cache the new map
                     st.session_state[map_cache_key] = route_map
                     logger.info("Route map generated and cached successfully")
                 except Exception as e:

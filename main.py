@@ -46,6 +46,19 @@ def main():
         auth_manager = get_auth_manager()
         ui_components = get_ui_components()
         
+        # Perform lightweight session state cleanup on startup
+        try:
+            from helper.utils.session_state_optimizer import get_session_state_optimizer
+            optimizer = get_session_state_optimizer()
+            
+            # Quick cleanup of old analysis dataframes (most common bloat)
+            removed_dataframes = optimizer.cleanup_old_analysis_dataframes()
+            if removed_dataframes:
+                logger.info(f"Startup cleanup: Removed {len(removed_dataframes)} old analysis dataframes")
+                
+        except Exception as e:
+            logger.warning(f"Session state cleanup failed: {e}")
+        
         # Initialize session state for authentication
         auth_manager.initialize_session_state()
         
