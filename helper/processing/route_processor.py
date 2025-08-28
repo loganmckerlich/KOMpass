@@ -18,6 +18,7 @@ import time
 import streamlit as st
 import hashlib
 from ..storage.storage_manager import get_storage_manager
+from ..utils.progress_tracker import ProgressTracker, create_route_analysis_tracker, create_traffic_analysis_tracker
 # FIT support removed - GPX only
 
 @st.cache_data(ttl=3600)  # Cache for 1 hour
@@ -88,7 +89,107 @@ class RouteProcessor:
         self.request_delay = 1.0  # Seconds between API requests to be respectful
     
     @st.cache_data(ttl=7200)  # Cache for 2 hours
-    def _analyze_gradients(_self, points_hash: str, points: List[Dict]) -> Dict:
+    def _analyze_gradients_and_climbs_combined(_self, points_hash: str, points: List[Dict]) -> Tuple[Dict, Dict]:
+        """Optimized combined analysis of gradients and climbs.
+        
+        This method combines gradient and climb analysis to avoid iterating through
+        the route points multiple times, improving performance.
+        
+        Returns:
+            Tuple of (gradient_analysis, climb_analysis) dictionaries
+        """
+        if len(points) < 2:
+            return {}, {}
+        
+        gradients = []
+        segments = []
+        climbs = []
+        current_climb = None
+        
+        for i in range(1, len(points)):
+            prev_point = points[i-1]
+            curr_point = points[i]
+            
+            if prev_point['elevation'] is not None and curr_point['elevation'] is not None:
+                distance_m = haversine_distance(
+                    prev_point['lat'], prev_point['lon'],
+                    curr_point['lat'], curr_point['lon']
+                ) * 1000  # Convert to meters
+                
+                elevation_change = curr_point['elevation'] - prev_point['elevation']
+                gradient = calculate_gradient(distance_m, elevation_change)
+                
+                # For gradient analysis
+                gradients.append(gradient)
+                segments.append({
+                    'distance_m': distance_m,
+                    'elevation_change_m': elevation_change,
+                    'gradient_percent': gradient
+                })
+                
+                # For climb analysis
+                # Start of climb (gradient > 3%)
+                if gradient > 3 and current_climb is None:
+                    current_climb = {
+                        'start_elevation': prev_point['elevation'],
+                        'distance_m': distance_m,
+                        'elevation_gain_m': max(0, elevation_change),
+                        'max_gradient': gradient,
+                        'segments': 1
+                    }
+                
+                # Continue climb
+                elif gradient > 1 and current_climb is not None:
+                    current_climb['distance_m'] += distance_m
+                    current_climb['elevation_gain_m'] += max(0, elevation_change)
+                    current_climb['max_gradient'] = max(current_climb['max_gradient'], gradient)
+                    current_climb['segments'] += 1
+                
+                # End of climb
+                elif current_climb is not None and (gradient <= 1 or i == len(points) - 1):
+                    if current_climb['elevation_gain_m'] > 10:  # Only count significant climbs
+                        current_climb['end_elevation'] = curr_point['elevation']
+                        current_climb['average_gradient'] = (current_climb['elevation_gain_m'] / current_climb['distance_m']) * 100
+                        current_climb['difficulty_score'] = _self._calculate_climb_difficulty(current_climb)
+                        climbs.append(current_climb)
+                    current_climb = None
+        
+        # Generate gradient analysis
+        gradient_analysis = {}
+        if gradients:
+            gradients = np.array(gradients)
+            gradient_analysis = {
+                'average_gradient_percent': round(np.mean(gradients), 2),
+                'max_gradient_percent': round(np.max(gradients), 2),
+                'min_gradient_percent': round(np.min(gradients), 2),
+                'gradient_std_dev': round(np.std(gradients), 2),
+                'steep_climbs_percent': round(np.sum(gradients > 8) / len(gradients) * 100, 1),
+                'moderate_climbs_percent': round(np.sum((gradients > 3) & (gradients <= 8)) / len(gradients) * 100, 1),
+                'flat_sections_percent': round(np.sum(np.abs(gradients) <= 3) / len(gradients) * 100, 1),
+                'descents_percent': round(np.sum(gradients < -3) / len(gradients) * 100, 1),
+                'segments': segments
+            }
+        
+        # Generate climb analysis
+        climb_analysis = {}
+        if not climbs:
+            climb_analysis = {'climb_count': 0}
+        else:
+            total_climb_distance = sum(c['distance_m'] for c in climbs)
+            total_climb_elevation = sum(c['elevation_gain_m'] for c in climbs)
+            
+            climb_analysis = {
+                'climb_count': len(climbs),
+                'total_climb_distance_km': round(total_climb_distance / 1000, 2),
+                'total_climb_elevation_m': round(total_climb_elevation, 1),
+                'average_climb_length_m': round(total_climb_distance / len(climbs), 0) if climbs else 0,
+                'average_climb_gradient': round(sum(c['average_gradient'] for c in climbs) / len(climbs), 2) if climbs else 0,
+                'max_climb_gradient': round(max(c['max_gradient'] for c in climbs), 2) if climbs else 0,
+                'climb_difficulty_score': round(sum(c['difficulty_score'] for c in climbs), 1),
+                'climbs': climbs
+            }
+        
+        return gradient_analysis, climb_analysis
         """Analyze gradient characteristics of the route.
         Cached for performance as gradient analysis is computationally expensive.
         """
@@ -638,6 +739,107 @@ class RouteProcessor:
                 'estimated_stops': 'Unable to calculate'
             }
     
+    def _analyze_traffic_stops_with_progress(self, points: List[Dict], stats: Dict, show_progress: bool = True) -> Dict:
+        """Analyze potential traffic stops along the route with progress tracking."""
+        if len(points) < 2 or not stats.get('bounds'):
+            return {'analysis_available': False, 'reason': 'Insufficient route data'}
+        
+        # Create traffic analysis progress tracker
+        tracker = None
+        if show_progress:
+            tracker = create_traffic_analysis_tracker()
+            tracker.start()
+        
+        try:
+            # Step 1: Bounds check
+            if tracker:
+                tracker.start_step("bounds_check")
+                
+            total_distance_km = stats.get('total_distance_km', 0)
+            
+            if tracker:
+                tracker.complete_step("bounds_check")
+                tracker.start_step("fetch_infrastructure")
+            
+            # Step 2: Get traffic infrastructure from OpenStreetMap
+            infrastructure = self._get_traffic_infrastructure(stats['bounds'], points)
+            
+            if tracker:
+                tracker.complete_step("fetch_infrastructure")
+                tracker.start_step("find_intersections")
+            
+            # Step 3: Find intersections with route
+            intersections = self._find_route_intersections(points, infrastructure)
+            
+            if tracker:
+                tracker.complete_step("find_intersections")
+                tracker.start_step("calculate_metrics")
+            
+            # Step 4: Calculate metrics
+            traffic_lights_count = len(intersections['traffic_light_intersections'])
+            major_crossings_count = len(intersections['major_road_crossings'])
+            total_stops = traffic_lights_count + major_crossings_count
+            
+            if tracker:
+                tracker.complete_step("calculate_metrics")
+                tracker.start_step("remove_duplicates")
+            
+            # Step 5: Remove duplicates (same intersection counted multiple times)
+            unique_traffic_lights = self._remove_duplicate_stops(
+                intersections['traffic_light_intersections'], threshold_m=75  # Increased for traffic lights
+            )
+            unique_major_crossings = self._remove_duplicate_stops(
+                intersections['major_road_crossings'], threshold_m=30  # Reduced for road crossings
+            )
+            
+            unique_total_stops = len(unique_traffic_lights) + len(unique_major_crossings)
+            
+            # Calculate stop density and spacing
+            stop_density = unique_total_stops / max(total_distance_km, 0.1)
+            
+            # Estimate time penalty (rough estimates)
+            # Traffic lights: 0-60 seconds (avg 20s), Major crossings: 0-10 seconds (avg 3s)
+            estimated_light_delay_minutes = len(unique_traffic_lights) * 0.33  # 20s avg per light
+            estimated_crossing_delay_minutes = len(unique_major_crossings) * 0.05  # 3s avg per crossing
+            total_estimated_delay_minutes = estimated_light_delay_minutes + estimated_crossing_delay_minutes
+            
+            # Calculate average distance between stops
+            if unique_total_stops > 1:
+                avg_distance_between_stops_km = total_distance_km / unique_total_stops
+            else:
+                avg_distance_between_stops_km = total_distance_km
+            
+            if tracker:
+                tracker.complete_step("remove_duplicates")
+                tracker.finish()
+            
+            return {
+                'analysis_available': True,
+                'traffic_lights_detected': len(unique_traffic_lights),
+                'major_road_crossings': len(unique_major_crossings),
+                'total_potential_stops': unique_total_stops,
+                'stop_density_per_km': round(stop_density, 2),
+                'average_distance_between_stops_km': round(avg_distance_between_stops_km, 2),
+                'estimated_time_penalty_minutes': round(total_estimated_delay_minutes, 1),
+                'traffic_light_locations': unique_traffic_lights,
+                'major_crossing_locations': unique_major_crossings,
+                'infrastructure_summary': {
+                    'total_traffic_lights_in_area': len(infrastructure['traffic_lights']),
+                    'total_major_roads_in_area': len(infrastructure['major_roads']),
+                    'route_intersections_found': unique_total_stops
+                }
+            }
+            
+        except Exception as e:
+            if tracker:
+                tracker.fail_step("traffic_analysis", str(e))
+                tracker.finish()
+            return {
+                'analysis_available': False,
+                'reason': f'Error during traffic analysis: {str(e)}',
+                'estimated_stops': 'Unable to calculate'
+            }
+    
     def _remove_duplicate_stops(self, stops: List[Dict], threshold_m: float = 50) -> List[Dict]:
         """Remove duplicate stops that are within threshold distance of each other."""
         if not stops:
@@ -779,7 +981,7 @@ class RouteProcessor:
             raise ValueError(f"Unsupported file type: {file_extension}. Only GPX files are supported.")
     
     @st.cache_data(ttl=7200)  # Cache route statistics for 2 hours
-    def calculate_route_statistics(_self, route_data_hash: str, route_data: Dict, include_traffic_analysis: bool = True) -> Dict:
+    def calculate_route_statistics(_self, route_data_hash: str, route_data: Dict, include_traffic_analysis: bool = True, show_progress: bool = True) -> Dict:
         """Calculate comprehensive statistics for the route including ML-ready features.
         Cached for performance as route statistics calculation is computationally expensive.
         
@@ -787,146 +989,211 @@ class RouteProcessor:
             route_data_hash: Hash of route data for caching
             route_data: Parsed route data dictionary
             include_traffic_analysis: Whether to include traffic stop analysis (slow)
+            show_progress: Whether to show progress indicators
             
         Returns:
             Dictionary containing route statistics and advanced metrics
             
         Note: Uses leading underscore on self to exclude from caching key
         """
-        stats = {
-            'total_distance_km': 0,
-            'total_elevation_gain_m': 0,
-            'total_elevation_loss_m': 0,
-            'max_elevation_m': None,
-            'min_elevation_m': None,
-            'total_points': 0,
-            'bounds': None
-        }
         
-        all_points = []
+        # Initialize progress tracker if requested
+        tracker = None
+        if show_progress:
+            tracker = create_route_analysis_tracker()
+            tracker.start()
         
-        # Collect all points from tracks and routes
-        for track in route_data.get('tracks', []):
-            for segment in track.get('segments', []):
-                all_points.extend(segment)
-        
-        for route in route_data.get('routes', []):
-            all_points.extend(route.get('points', []))
-        
-        if not all_points:
-            return stats
-        
-        stats['total_points'] = len(all_points)
-        
-        # Calculate bounds
-        lats = [p['lat'] for p in all_points]
-        lons = [p['lon'] for p in all_points]
-        stats['bounds'] = {
-            'north': max(lats),
-            'south': min(lats),
-            'east': max(lons),
-            'west': min(lons)
-        }
-        
-        # Calculate basic distance and elevation statistics
-        total_distance = 0
-        elevations = [p['elevation'] for p in all_points if p['elevation'] is not None]
-        
-        if elevations:
-            stats['max_elevation_m'] = max(elevations)
-            stats['min_elevation_m'] = min(elevations)
+        try:
+            # Step 1: Parse and collect route data
+            if tracker:
+                tracker.start_step("parse_data")
             
-            # Calculate elevation gain/loss
-            for i in range(1, len(elevations)):
-                diff = elevations[i] - elevations[i-1]
-                if diff > 0:
-                    stats['total_elevation_gain_m'] += diff
-                else:
-                    stats['total_elevation_loss_m'] += abs(diff)
-        
-        # Calculate total distance
-        for i in range(1, len(all_points)):
-            prev_point = all_points[i-1]
-            curr_point = all_points[i]
-            distance = haversine_distance(
-                prev_point['lat'], prev_point['lon'],
-                curr_point['lat'], curr_point['lon']
-            )
-            total_distance += distance
-        
-        stats['total_distance_km'] = round(total_distance, 2)
-        stats['total_elevation_gain_m'] = round(stats['total_elevation_gain_m'], 1)
-        stats['total_elevation_loss_m'] = round(stats['total_elevation_loss_m'], 1)
-        
-        # Advanced ML-ready metrics (always calculated)
-        if len(all_points) >= 2:
-            # Create hash for caching based on points data
-            points_hash = hashlib.md5(str([(p['lat'], p['lon'], p.get('elevation')) for p in all_points]).encode()).hexdigest()
-            
-            # Gradient analysis
-            gradient_analysis = _self._analyze_gradients(points_hash, all_points)
-            stats['gradient_analysis'] = gradient_analysis
-            
-            # Climbing analysis
-            climb_analysis = _self._analyze_climbs(points_hash, all_points)
-            stats['climb_analysis'] = climb_analysis
-            
-            # Route complexity analysis
-            complexity_analysis = _self._analyze_route_complexity(points_hash, all_points)
-            stats['complexity_analysis'] = complexity_analysis
-            
-            # Terrain classification for ML features
-            gradient_hash = hashlib.md5(str(gradient_analysis).encode()).hexdigest()
-            terrain_analysis = _self._classify_terrain_type(gradient_hash, gradient_analysis)
-            stats['terrain_analysis'] = terrain_analysis
-            
-            # Power requirements analysis for ML features
-            power_analysis = _self._estimate_power_requirements(gradient_analysis, total_distance)
-            stats['power_analysis'] = power_analysis
-            
-            # Traffic stop analysis (optional - can be very slow)
-            if include_traffic_analysis:
-                traffic_analysis = _self._analyze_traffic_stops(all_points, stats)
-                stats['traffic_analysis'] = traffic_analysis
-            else:
-                stats['traffic_analysis'] = {
-                    'analysis_available': False,
-                    'reason': 'Traffic analysis disabled for performance',
-                    'traffic_lights_detected': 0,
-                    'major_road_crossings': 0,
-                    'total_potential_stops': 0
-                }
-            
-            # Additional derived metrics for ML
-            ml_features = {
-                'route_density_points_per_km': round(len(all_points) / max(total_distance, 0.1), 1),
-                'elevation_range_m': (stats['max_elevation_m'] - stats['min_elevation_m']) if elevations else 0,
-                'elevation_variation_index': round(stats['total_elevation_gain_m'] / max(total_distance, 0.1), 1),
-                'route_compactness': round(total_distance / max(
-                    haversine_distance(stats['bounds']['north'], stats['bounds']['west'],
-                                     stats['bounds']['south'], stats['bounds']['east']), 0.1), 2),
-                'difficulty_index': round((
-                    gradient_analysis.get('steep_climbs_percent', 0) * 3 +
-                    gradient_analysis.get('moderate_climbs_percent', 0) * 1.5 +
-                    complexity_analysis.get('complexity_score', 0) * 0.5
-                ) / 100, 3)
+            stats = {
+                'total_distance_km': 0,
+                'total_elevation_gain_m': 0,
+                'total_elevation_loss_m': 0,
+                'max_elevation_m': None,
+                'min_elevation_m': None,
+                'total_points': 0,
+                'bounds': None
             }
             
-            # Add traffic-related ML features if traffic analysis was performed
-            if include_traffic_analysis and stats['traffic_analysis'].get('analysis_available'):
-                traffic_analysis = stats['traffic_analysis']
-                ml_features.update({
-                    'stop_density_per_km': traffic_analysis.get('stop_density_per_km', 0),
-                    'estimated_stop_time_penalty_min': traffic_analysis.get('estimated_time_penalty_minutes', 0),
-                    'traffic_complexity_factor': round(
-                        traffic_analysis.get('stop_density_per_km', 0) * 0.1 + 
-                        (traffic_analysis.get('traffic_lights_detected', 0) * 0.02), 3
-                    )
-                })
+            all_points = []
             
-            stats['ml_features'] = ml_features
-        
-        return stats
+            # Collect all points from tracks and routes
+            for track in route_data.get('tracks', []):
+                for segment in track.get('segments', []):
+                    all_points.extend(segment)
+            
+            for route in route_data.get('routes', []):
+                all_points.extend(route.get('points', []))
+            
+            if not all_points:
+                if tracker:
+                    tracker.fail_step("parse_data", "No route points found")
+                    tracker.finish()
+                return stats
+            
+            if tracker:
+                tracker.complete_step("parse_data")
+                tracker.start_step("basic_stats")
+            
+            # Step 2: Calculate basic statistics
+            stats['total_points'] = len(all_points)
+            
+            # Calculate bounds
+            lats = [p['lat'] for p in all_points]
+            lons = [p['lon'] for p in all_points]
+            stats['bounds'] = {
+                'north': max(lats),
+                'south': min(lats),
+                'east': max(lons),
+                'west': min(lons)
+            }
+            
+            # Calculate basic distance and elevation statistics
+            total_distance = 0
+            elevations = [p['elevation'] for p in all_points if p['elevation'] is not None]
+            
+            if elevations:
+                stats['max_elevation_m'] = max(elevations)
+                stats['min_elevation_m'] = min(elevations)
+                
+                # Calculate elevation gain/loss
+                for i in range(1, len(elevations)):
+                    diff = elevations[i] - elevations[i-1]
+                    if diff > 0:
+                        stats['total_elevation_gain_m'] += diff
+                    else:
+                        stats['total_elevation_loss_m'] += abs(diff)
+            
+            # Calculate total distance
+            for i in range(1, len(all_points)):
+                prev_point = all_points[i-1]
+                curr_point = all_points[i]
+                distance = haversine_distance(
+                    prev_point['lat'], prev_point['lon'],
+                    curr_point['lat'], curr_point['lon']
+                )
+                total_distance += distance
+            
+            stats['total_distance_km'] = round(total_distance, 2)
+            stats['total_elevation_gain_m'] = round(stats['total_elevation_gain_m'], 1)
+            stats['total_elevation_loss_m'] = round(stats['total_elevation_loss_m'], 1)
+            
+            if tracker:
+                tracker.complete_step("basic_stats")
+            
+            # Advanced ML-ready metrics (only if we have enough points)
+            if len(all_points) >= 2:
+                # Create hash for caching based on points data
+                points_hash = hashlib.md5(str([(p['lat'], p['lon'], p.get('elevation')) for p in all_points]).encode()).hexdigest()
+                
+                # Step 3 & 4: Combined gradient and climb analysis (optimized)
+                if tracker:
+                    tracker.start_step("gradients")
+                gradient_analysis, climb_analysis = _self._analyze_gradients_and_climbs_combined(points_hash, all_points)
+                stats['gradient_analysis'] = gradient_analysis
+                stats['climb_analysis'] = climb_analysis
+                if tracker:
+                    tracker.complete_step("gradients")
+                    tracker.complete_step("climbs")
+                
+                # Step 5: Route complexity analysis
+                if tracker:
+                    tracker.start_step("complexity")
+                complexity_analysis = _self._analyze_route_complexity(points_hash, all_points)
+                stats['complexity_analysis'] = complexity_analysis
+                if tracker:
+                    tracker.complete_step("complexity")
+                
+                # Step 6: Terrain classification for ML features
+                if tracker:
+                    tracker.start_step("terrain")
+                gradient_hash = hashlib.md5(str(gradient_analysis).encode()).hexdigest()
+                terrain_analysis = _self._classify_terrain_type(gradient_hash, gradient_analysis)
+                stats['terrain_analysis'] = terrain_analysis
+                if tracker:
+                    tracker.complete_step("terrain")
+                
+                # Step 7: Power requirements analysis for ML features
+                if tracker:
+                    tracker.start_step("power")
+                power_analysis = _self._estimate_power_requirements(gradient_analysis, total_distance)
+                stats['power_analysis'] = power_analysis
+                if tracker:
+                    tracker.complete_step("power")
+                
+                # Step 8: Generate ML features
+                if tracker:
+                    tracker.start_step("ml_features")
+                
+                # Additional derived metrics for ML
+                ml_features = {
+                    'route_density_points_per_km': round(len(all_points) / max(total_distance, 0.1), 1),
+                    'elevation_range_m': (stats['max_elevation_m'] - stats['min_elevation_m']) if elevations else 0,
+                    'elevation_variation_index': round(stats['total_elevation_gain_m'] / max(total_distance, 0.1), 1),
+                    'route_compactness': round(total_distance / max(
+                        haversine_distance(stats['bounds']['north'], stats['bounds']['west'],
+                                         stats['bounds']['south'], stats['bounds']['east']), 0.1), 2),
+                    'difficulty_index': round((
+                        gradient_analysis.get('steep_climbs_percent', 0) * 3 +
+                        gradient_analysis.get('moderate_climbs_percent', 0) * 1.5 +
+                        complexity_analysis.get('complexity_score', 0) * 0.5
+                    ) / 100, 3)
+                }
+                
+                stats['ml_features'] = ml_features
+                if tracker:
+                    tracker.complete_step("ml_features")
+                
+                # Traffic stop analysis (optional - can be very slow)
+                if include_traffic_analysis:
+                    try:
+                        # Use separate progress tracker for traffic analysis
+                        if show_progress:
+                            st.markdown("---")
+                            st.markdown("### 🚦 Additional Traffic Analysis")
+                        traffic_analysis = _self._analyze_traffic_stops_with_progress(all_points, stats, show_progress)
+                        stats['traffic_analysis'] = traffic_analysis
+                        
+                        # Add traffic-related ML features if traffic analysis was successful
+                        if traffic_analysis.get('analysis_available'):
+                            ml_features.update({
+                                'stop_density_per_km': traffic_analysis.get('stop_density_per_km', 0),
+                                'estimated_stop_time_penalty_min': traffic_analysis.get('estimated_time_penalty_minutes', 0),
+                                'traffic_complexity_factor': round(
+                                    traffic_analysis.get('stop_density_per_km', 0) * 0.1 + 
+                                    (traffic_analysis.get('traffic_lights_detected', 0) * 0.02), 3
+                                )
+                            })
+                    except Exception as e:
+                        stats['traffic_analysis'] = {
+                            'analysis_available': False,
+                            'reason': f'Traffic analysis failed: {str(e)}',
+                            'traffic_lights_detected': 0,
+                            'major_road_crossings': 0,
+                            'total_potential_stops': 0
+                        }
+                else:
+                    stats['traffic_analysis'] = {
+                        'analysis_available': False,
+                        'reason': 'Traffic analysis disabled for performance',
+                        'traffic_lights_detected': 0,
+                        'major_road_crossings': 0,
+                        'total_potential_stops': 0
+                    }
+            
+            if tracker:
+                tracker.finish()
+            
+            return stats
+            
+        except Exception as e:
+            if tracker:
+                tracker.fail_step("analysis", str(e))
+                tracker.finish()
+            raise
     
     @st.cache_data(ttl=7200)  # Cache dataframe creation for 2 hours as it's expensive
     def create_analysis_dataframe(_self, route_data_hash: str, route_data: Dict, stats: Dict) -> pd.DataFrame:

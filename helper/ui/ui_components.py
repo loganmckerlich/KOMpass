@@ -355,7 +355,8 @@ class UIComponents:
                     stats = self.route_processor.calculate_route_statistics(
                         route_data_hash,
                         route_data, 
-                        include_traffic_analysis=False  # Traffic analysis remains optional for performance
+                        include_traffic_analysis=False,  # Traffic analysis remains optional for performance
+                        show_progress=True  # Enable progress tracking
                     )
                     processing_time = time.time() - start_time
                 
@@ -581,7 +582,8 @@ class UIComponents:
                     stats = self.route_processor.calculate_route_statistics(
                         route_data_hash,
                         route_data, 
-                        include_traffic_analysis=False  # Traffic analysis remains optional for performance
+                        include_traffic_analysis=False,  # Traffic analysis remains optional for performance
+                        show_progress=True  # Enable progress tracking for Strava routes too
                     )
                     processing_time = time.time() - start_time
                 
@@ -748,7 +750,8 @@ class UIComponents:
                     stats = self.route_processor.calculate_route_statistics(
                         route_data_hash,
                         route_data, 
-                        include_traffic_analysis=True
+                        include_traffic_analysis=True,
+                        show_progress=True  # Show progress for traffic analysis
                     )
                     logger.info("Traffic analysis completed automatically")
             except Exception as e:
@@ -914,7 +917,8 @@ class UIComponents:
                 full_stats = self.route_processor.calculate_route_statistics(
                     route_data_hash,
                     route_data, 
-                    include_traffic_analysis=True
+                    include_traffic_analysis=True,
+                    show_progress=True  # Show progress for async traffic analysis
                 )
                 
                 # Update the session state with new stats
