@@ -1054,6 +1054,129 @@ class RouteProcessor:
             log_performance(logger, f"parse_route_file({filename}) [FAILED]", duration)
             raise
     
+    def process_route(self, file_path: str) -> Optional[Dict]:
+        """
+        Process a route file from filesystem path.
+        
+        Args:
+            file_path: Path to the GPX file
+            
+        Returns:
+            Complete route data with statistics or None if processing failed
+        """
+        logger = get_logger(__name__)
+        log_function_entry(logger, "process_route", file_path=file_path)
+        
+        try:
+            # Read file content
+            with open(file_path, 'rb') as f:
+                file_content = f.read()
+            
+            filename = os.path.basename(file_path)
+            
+            # Parse the route file
+            file_content_hash = hashlib.md5(file_content).hexdigest()
+            route_data = self.parse_route_file(file_content_hash, file_content, filename)
+            
+            if not route_data:
+                logger.error(f"Failed to parse route file: {filename}")
+                return None
+            
+            # Calculate statistics
+            route_data_hash = hashlib.md5(str(route_data).encode()).hexdigest()
+            stats = self.calculate_route_statistics(
+                route_data_hash, 
+                route_data, 
+                include_traffic_analysis=True, 
+                show_progress=True
+            )
+            
+            # Combine route data and statistics
+            complete_route_data = {
+                'route_data': route_data,
+                'statistics': stats,
+                'filename': filename,
+                'processed_at': datetime.now().isoformat()
+            }
+            
+            log_function_exit(logger, "process_route")
+            return complete_route_data
+            
+        except Exception as e:
+            log_error(logger, e, f"Failed to process route file {file_path}")
+            log_function_exit(logger, "process_route")
+            return None
+    
+    def process_route_data(self, route_data: Dict) -> Optional[Dict]:
+        """
+        Process pre-parsed route data (e.g., from Strava imports).
+        
+        Args:
+            route_data: Already parsed route data structure
+            
+        Returns:
+            Complete route data with statistics or None if processing failed
+        """
+        logger = get_logger(__name__)
+        log_function_entry(logger, "process_route_data")
+        
+        try:
+            if not route_data or 'points' not in route_data:
+                logger.error("Invalid route data: missing points")
+                return None
+            
+            # Convert flat points structure to GPX-like structure for statistics calculation
+            converted_route_data = {
+                'metadata': route_data.get('metadata', {}),
+                'tracks': [],
+                'routes': [],
+                'waypoints': []
+            }
+            
+            # Convert points to track structure (most common for activity data)
+            if route_data['points']:
+                track_points = []
+                for point in route_data['points']:
+                    # Convert from Strava format (latitude/longitude) to GPX format (lat/lon)
+                    converted_point = {
+                        'lat': point.get('latitude', point.get('lat', 0)),
+                        'lon': point.get('longitude', point.get('lon', 0)),
+                        'elevation': point.get('elevation', 0),
+                        'time': point.get('time')
+                    }
+                    track_points.append(converted_point)
+                
+                # Add as a single track with one segment
+                converted_route_data['tracks'] = [{
+                    'name': route_data.get('metadata', {}).get('name', 'Imported Route'),
+                    'segments': [track_points]
+                }]
+            
+            # Calculate statistics using the converted structure
+            route_data_hash = hashlib.md5(str(converted_route_data).encode()).hexdigest()
+            stats = self.calculate_route_statistics(
+                route_data_hash, 
+                converted_route_data, 
+                include_traffic_analysis=True, 
+                show_progress=True
+            )
+            
+            # Combine original route data and statistics
+            complete_route_data = {
+                'route_data': converted_route_data,  # Use converted structure for consistency
+                'statistics': stats,
+                'filename': route_data.get('filename', 'unknown_route.gpx'),
+                'processed_at': datetime.now().isoformat()
+            }
+            
+            log_function_exit(logger, "process_route_data")
+            return complete_route_data
+            
+        except Exception as e:
+            log_error(logger, e, "Failed to process route data")
+            log_function_exit(logger, "process_route_data")
+            return None
+    
     @st.cache_data(ttl=7200)  # Cache route statistics for 2 hours
     def calculate_route_statistics(_self, route_data_hash: str, route_data: Dict, include_traffic_analysis: bool = True, show_progress: bool = True) -> Dict:
         """Calculate comprehensive statistics for the route including ML-ready features.
