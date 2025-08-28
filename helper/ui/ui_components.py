@@ -288,13 +288,15 @@ class UIComponents:
             Upload GPX files from Strava, Garmin Connect, RideWithGPS, or any cycling app
             
             **2. View Analysis** 📊  
-            Get detailed insights on elevation, gradients, traffic stops, and route complexity
+            Get detailed insights on elevation, gradients, and route complexity
             
             **3. Weather Check** 🌤️  
-            Plan your ride with weather forecasting for your route
+            Weather forecasting temporarily disabled
             
             **4. Save & Compare** 💾  
             Save routes for future reference and compare performance metrics
+            
+            *Note: Traffic light analysis and weather forecasting are temporarily disabled*
             """)
         
         # Show system info only for authenticated users (much smaller)
@@ -380,12 +382,12 @@ class UIComponents:
                     file_content_hash = hashlib.md5(file_content_bytes).hexdigest()
                     route_data = self.route_processor.parse_route_file(file_content_hash, file_content_bytes, uploaded_file.name)
                     
-                    # Calculate statistics with all advanced analysis enabled
+                    # Calculate statistics with configuration-based analysis settings
                     route_data_hash = hashlib.md5(str(route_data).encode()).hexdigest()
                     stats = self.route_processor.calculate_route_statistics(
                         route_data_hash,
                         route_data, 
-                        include_traffic_analysis=False,  # Traffic analysis remains optional for performance
+                        include_traffic_analysis=self.config.app.enable_traffic_analysis,  # Use configuration flag
                         show_progress=True  # Enable progress tracking
                     )
                     processing_time = time.time() - start_time
@@ -622,7 +624,7 @@ class UIComponents:
                     stats = self.route_processor.calculate_route_statistics(
                         route_data_hash,
                         route_data, 
-                        include_traffic_analysis=False,  # Traffic analysis remains optional for performance
+                        include_traffic_analysis=self.config.app.enable_traffic_analysis,  # Use configuration flag
                         show_progress=True  # Enable progress tracking for Strava routes too
                     )
                     processing_time = time.time() - start_time
@@ -751,9 +753,16 @@ class UIComponents:
         if stats.get('terrain_analysis'):
             self._render_terrain_analysis(stats['terrain_analysis'], {})
         
-        # Show traffic analysis results
-        if stats.get('traffic_analysis', {}).get('analysis_available'):
-            self._render_traffic_analysis(stats['traffic_analysis'])
+        # Show traffic analysis results or disabled message
+        if self.config.app.enable_traffic_analysis:
+            if stats.get('traffic_analysis', {}).get('analysis_available'):
+                self._render_traffic_analysis(stats['traffic_analysis'])
+            elif stats.get('traffic_analysis'):
+                # Traffic analysis was attempted but failed
+                st.info("ℹ️ Traffic analysis was attempted but no data is available for this route.")
+        else:
+            # Traffic analysis is disabled
+            st.info("🚦 Traffic light and intersection analysis is temporarily disabled.")
         
         # Automatically generate and cache comprehensive dataframe for ML use
         try:
@@ -863,16 +872,25 @@ class UIComponents:
                 st.metric("Route Detail", f"{point_density:.0f} pts/km")
             
             # Weather condition if available
-            weather_analysis = getattr(st.session_state, 'latest_weather_analysis', {})
-            if weather_analysis.get('analysis_available'):
-                wind_data = weather_analysis.get('wind_analysis', {})
-                if wind_data.get('analysis_available'):
-                    avg_wind = wind_data.get('avg_headwind_component_kmh', 0)
-                    wind_label = "Tailwind" if avg_wind < 0 else "Headwind"
-                    st.metric(f"Avg {wind_label}", f"{abs(avg_wind):.1f} km/h")
+            if self.config.app.enable_weather_analysis:
+                weather_analysis = getattr(st.session_state, 'latest_weather_analysis', {})
+                if weather_analysis.get('analysis_available'):
+                    wind_data = weather_analysis.get('wind_analysis', {})
+                    if wind_data.get('analysis_available'):
+                        avg_wind = wind_data.get('avg_headwind_component_kmh', 0)
+                        wind_label = "Tailwind" if avg_wind < 0 else "Headwind"
+                        st.metric(f"Avg {wind_label}", f"{abs(avg_wind):.1f} km/h")
+            else:
+                # Show that weather analysis is disabled in the KPI area
+                st.metric("Weather", "Disabled")
     
     def _perform_automatic_weather_analysis(self, route_data: Dict, stats: Dict):
         """Perform automatic weather analysis with default 'now' start time."""
+        # Check if weather analysis is enabled
+        if not self.config.app.enable_weather_analysis:
+            logger.info("Weather analysis is disabled - skipping automatic analysis")
+            return
+            
         try:
             # Use current time as default departure time
             departure_datetime = datetime.now()
@@ -1384,8 +1402,13 @@ class UIComponents:
     
     @st.fragment  # Independent fragment for weather analysis input
     def _render_weather_analysis_section(self, route_data: Dict, stats: Dict):
-        """Render weather analysis section - now shows automatic analysis with option to customize timing."""
+        """Render weather analysis section - shows disabled message when weather analysis is turned off."""
         st.subheader("🌤️ Weather Analysis")
+        
+        # Check if weather analysis is enabled
+        if not self.config.app.enable_weather_analysis:
+            st.info("🌤️ Weather analysis is temporarily disabled.")
+            return
         
         # Show automatic weather analysis results
         weather_analysis = getattr(st.session_state, 'latest_weather_analysis', {})
@@ -1428,6 +1451,11 @@ class UIComponents:
     def _process_weather_analysis(self, route_data: Dict, departure_datetime: datetime):
         """Process weather analysis for the route."""
         log_function_entry(logger, "_process_weather_analysis", departure=departure_datetime.isoformat())
+        
+        # Check if weather analysis is enabled
+        if not self.config.app.enable_weather_analysis:
+            st.warning("⚠️ Weather analysis is currently disabled.")
+            return
         
         with st.spinner("Analyzing weather conditions along your route..."):
             try:
