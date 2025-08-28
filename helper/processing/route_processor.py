@@ -19,6 +19,7 @@ import streamlit as st
 import hashlib
 from ..storage.storage_manager import get_storage_manager
 from ..utils.progress_tracker import ProgressTracker, create_route_analysis_tracker, create_traffic_analysis_tracker
+from ..config.logging_config import get_logger, log_function_entry, log_function_exit, log_performance, log_error
 # FIT support removed - GPX only
 
 @st.cache_data(ttl=3600)  # Cache for 1 hour
@@ -82,11 +83,16 @@ class RouteProcessor:
         """
         self.data_dir = data_dir
         self.storage_manager = get_storage_manager()
+        self.logger = get_logger(__name__)
         self._ensure_data_dir()
         
         # Overpass API configuration for OpenStreetMap queries
         self.overpass_url = "https://overpass-api.de/api/interpreter"
         self.request_delay = 1.0  # Seconds between API requests to be respectful
+        
+        self.logger.info("RouteProcessor initialized")
+        self.logger.debug(f"Data directory: {self.data_dir}")
+        self.logger.debug(f"Overpass API URL: {self.overpass_url}")
     
     @st.cache_data(ttl=7200)  # Cache for 2 hours
     def _analyze_gradients_and_climbs_combined(_self, points_hash: str, points: List[Dict]) -> Tuple[Dict, Dict]:
@@ -741,7 +747,11 @@ class RouteProcessor:
     
     def _analyze_traffic_stops_with_progress(self, points: List[Dict], stats: Dict, show_progress: bool = True) -> Dict:
         """Analyze potential traffic stops along the route with progress tracking."""
+        self.logger.info("🚦 Starting detailed traffic stop analysis")
+        analysis_start_time = time.time()
+        
         if len(points) < 2 or not stats.get('bounds'):
+            self.logger.warning("Insufficient route data for traffic analysis")
             return {'analysis_available': False, 'reason': 'Insufficient route data'}
         
         # Create traffic analysis progress tracker
@@ -756,20 +766,34 @@ class RouteProcessor:
                 tracker.start_step("bounds_check")
                 
             total_distance_km = stats.get('total_distance_km', 0)
+            self.logger.debug(f"Traffic analysis bounds: {stats['bounds']}, distance: {total_distance_km}km")
             
             if tracker:
                 tracker.complete_step("bounds_check")
                 tracker.start_step("fetch_infrastructure")
             
             # Step 2: Get traffic infrastructure from OpenStreetMap
+            step_start_time = time.time()
+            self.logger.info("🗺️ Fetching traffic infrastructure data from OpenStreetMap")
             infrastructure = self._get_traffic_infrastructure(stats['bounds'], points)
+            
+            step_duration = time.time() - step_start_time
+            log_performance(self.logger, "fetch_traffic_infrastructure", step_duration,
+                          f"traffic_lights={len(infrastructure.get('traffic_lights', []))}, roads={len(infrastructure.get('major_roads', []))}")
+            self.logger.info(f"✅ Infrastructure fetched: {len(infrastructure.get('traffic_lights', []))} traffic lights, {len(infrastructure.get('major_roads', []))} major roads")
             
             if tracker:
                 tracker.complete_step("fetch_infrastructure")
                 tracker.start_step("find_intersections")
             
             # Step 3: Find intersections with route
+            step_start_time = time.time()
+            self.logger.info("🔍 Finding intersections between route and infrastructure")
             intersections = self._find_route_intersections(points, infrastructure)
+            
+            step_duration = time.time() - step_start_time
+            log_performance(self.logger, "find_route_intersections", step_duration)
+            self.logger.info(f"✅ Intersections found: {len(intersections['traffic_light_intersections'])} traffic light intersections, {len(intersections['major_road_crossings'])} road crossings")
             
             if tracker:
                 tracker.complete_step("find_intersections")
@@ -785,6 +809,8 @@ class RouteProcessor:
                 tracker.start_step("remove_duplicates")
             
             # Step 5: Remove duplicates (same intersection counted multiple times)
+            step_start_time = time.time()
+            self.logger.info("🧹 Removing duplicate stops")
             unique_traffic_lights = self._remove_duplicate_stops(
                 intersections['traffic_light_intersections'], threshold_m=75  # Increased for traffic lights
             )
@@ -792,7 +818,11 @@ class RouteProcessor:
                 intersections['major_road_crossings'], threshold_m=30  # Reduced for road crossings
             )
             
+            step_duration = time.time() - step_start_time
             unique_total_stops = len(unique_traffic_lights) + len(unique_major_crossings)
+            log_performance(self.logger, "remove_duplicate_stops", step_duration,
+                          f"original={total_stops}, unique={unique_total_stops}")
+            self.logger.info(f"✅ Duplicates removed: {total_stops} → {unique_total_stops} unique stops")
             
             # Calculate stop density and spacing
             stop_density = unique_total_stops / max(total_distance_km, 0.1)
@@ -813,6 +843,12 @@ class RouteProcessor:
                 tracker.complete_step("remove_duplicates")
                 tracker.finish()
             
+            # Log completion with summary
+            total_duration = time.time() - analysis_start_time
+            log_performance(self.logger, "traffic_analysis_complete", total_duration,
+                          f"stops={unique_total_stops}, density={stop_density:.2f}/km, delay={total_estimated_delay_minutes:.1f}min")
+            self.logger.info(f"🎉 Traffic analysis completed: {unique_total_stops} total stops ({len(unique_traffic_lights)} lights, {len(unique_major_crossings)} crossings)")
+            
             return {
                 'analysis_available': True,
                 'traffic_lights_detected': len(unique_traffic_lights),
@@ -831,6 +867,11 @@ class RouteProcessor:
             }
             
         except Exception as e:
+            total_duration = time.time() - analysis_start_time
+            log_error(self.logger, e, "Traffic analysis failed")
+            log_performance(self.logger, "traffic_analysis_failed", total_duration)
+            self.logger.error("💥 Traffic analysis failed with error")
+            
             if tracker:
                 tracker.fail_step("traffic_analysis", str(e))
                 tracker.finish()
@@ -969,16 +1010,38 @@ class RouteProcessor:
         Returns:
             Dictionary containing parsed route data
         """
-        file_extension = filename.lower().split('.')[-1]
+        logger = get_logger(__name__)
+        log_function_entry(logger, "parse_route_file", filename=filename, size_bytes=len(file_content))
+        start_time = time.time()
         
-        if file_extension == 'gpx':
-            try:
-                gpx_content = file_content.decode('utf-8')
-                return _self.parse_gpx_file(gpx_content)
-            except UnicodeDecodeError:
-                raise ValueError("Invalid GPX file: Unable to decode as UTF-8")
-        else:
-            raise ValueError(f"Unsupported file type: {file_extension}. Only GPX files are supported.")
+        try:
+            file_extension = filename.lower().split('.')[-1]
+            
+            if file_extension == 'gpx':
+                try:
+                    logger.info(f"Starting GPX file parsing: {filename}")
+                    gpx_content = file_content.decode('utf-8')
+                    result = _self.parse_gpx_file(gpx_content)
+                    
+                    duration = time.time() - start_time
+                    log_performance(logger, f"parse_route_file({filename})", duration, 
+                                  f"points={result.get('total_points', 0)}, tracks={len(result.get('tracks', []))}")
+                    
+                    log_function_exit(logger, "parse_route_file", result)
+                    return result
+                    
+                except UnicodeDecodeError as e:
+                    logger.error(f"UTF-8 decode error for file {filename}: {str(e)}")
+                    raise ValueError("Invalid GPX file: Unable to decode as UTF-8")
+            else:
+                logger.warning(f"Unsupported file type attempted: {file_extension} for file {filename}")
+                raise ValueError(f"Unsupported file type: {file_extension}. Only GPX files are supported.")
+                
+        except Exception as e:
+            duration = time.time() - start_time
+            log_error(logger, e, f"Failed to parse route file {filename}")
+            log_performance(logger, f"parse_route_file({filename}) [FAILED]", duration)
+            raise
     
     @st.cache_data(ttl=7200)  # Cache route statistics for 2 hours
     def calculate_route_statistics(_self, route_data_hash: str, route_data: Dict, include_traffic_analysis: bool = True, show_progress: bool = True) -> Dict:
@@ -996,6 +1059,12 @@ class RouteProcessor:
             
         Note: Uses leading underscore on self to exclude from caching key
         """
+        logger = get_logger(__name__)
+        log_function_entry(logger, "calculate_route_statistics", 
+                          include_traffic=include_traffic_analysis, show_progress=show_progress)
+        
+        analysis_start_time = time.time()
+        logger.info("🚀 Starting comprehensive route analysis")
         
         # Initialize progress tracker if requested
         tracker = None
@@ -1005,6 +1074,8 @@ class RouteProcessor:
         
         try:
             # Step 1: Parse and collect route data
+            step_start_time = time.time()
+            logger.info("📄 Step 1: Starting route data parsing")
             if tracker:
                 tracker.start_step("parse_data")
             
@@ -1029,16 +1100,23 @@ class RouteProcessor:
                 all_points.extend(route.get('points', []))
             
             if not all_points:
+                logger.warning("No route points found in route data")
                 if tracker:
                     tracker.fail_step("parse_data", "No route points found")
                     tracker.finish()
                 return stats
+            
+            step_duration = time.time() - step_start_time
+            log_performance(logger, "parse_route_data", step_duration, f"collected {len(all_points)} points")
+            logger.info(f"✅ Step 1 completed: Parsed {len(all_points)} route points")
             
             if tracker:
                 tracker.complete_step("parse_data")
                 tracker.start_step("basic_stats")
             
             # Step 2: Calculate basic statistics
+            step_start_time = time.time()
+            logger.info("📊 Step 2: Starting basic statistics calculation")
             stats['total_points'] = len(all_points)
             
             # Calculate bounds
@@ -1081,6 +1159,11 @@ class RouteProcessor:
             stats['total_elevation_gain_m'] = round(stats['total_elevation_gain_m'], 1)
             stats['total_elevation_loss_m'] = round(stats['total_elevation_loss_m'], 1)
             
+            step_duration = time.time() - step_start_time
+            log_performance(logger, "calculate_basic_stats", step_duration, 
+                          f"distance={stats['total_distance_km']}km, gain={stats['total_elevation_gain_m']}m")
+            logger.info(f"✅ Step 2 completed: Distance={stats['total_distance_km']}km, Elevation gain={stats['total_elevation_gain_m']}m")
+            
             if tracker:
                 tracker.complete_step("basic_stats")
             
@@ -1090,41 +1173,75 @@ class RouteProcessor:
                 points_hash = hashlib.md5(str([(p['lat'], p['lon'], p.get('elevation')) for p in all_points]).encode()).hexdigest()
                 
                 # Step 3 & 4: Combined gradient and climb analysis (optimized)
+                step_start_time = time.time()
+                logger.info("⛰️ Step 3-4: Starting gradient and climb analysis")
                 if tracker:
                     tracker.start_step("gradients")
                 gradient_analysis, climb_analysis = _self._analyze_gradients_and_climbs_combined(points_hash, all_points)
                 stats['gradient_analysis'] = gradient_analysis
                 stats['climb_analysis'] = climb_analysis
+                
+                step_duration = time.time() - step_start_time
+                log_performance(logger, "analyze_gradients_and_climbs", step_duration,
+                              f"climbs={len(climb_analysis.get('climbs', []))}, max_gradient={gradient_analysis.get('max_gradient', 0):.1f}%")
+                logger.info(f"✅ Step 3-4 completed: Found {len(climb_analysis.get('climbs', []))} climbs, max gradient {gradient_analysis.get('max_gradient', 0):.1f}%")
+                
                 if tracker:
                     tracker.complete_step("gradients")
                     tracker.complete_step("climbs")
                 
                 # Step 5: Route complexity analysis
+                step_start_time = time.time()
+                logger.info("🗺️ Step 5: Starting route complexity analysis")
                 if tracker:
                     tracker.start_step("complexity")
                 complexity_analysis = _self._analyze_route_complexity(points_hash, all_points)
                 stats['complexity_analysis'] = complexity_analysis
+                
+                step_duration = time.time() - step_start_time
+                log_performance(logger, "analyze_route_complexity", step_duration,
+                              f"complexity_score={complexity_analysis.get('complexity_score', 0):.2f}")
+                logger.info(f"✅ Step 5 completed: Complexity score {complexity_analysis.get('complexity_score', 0):.2f}")
+                
                 if tracker:
                     tracker.complete_step("complexity")
                 
                 # Step 6: Terrain classification for ML features
+                step_start_time = time.time()
+                logger.info("🏔️ Step 6: Starting terrain classification")
                 if tracker:
                     tracker.start_step("terrain")
                 gradient_hash = hashlib.md5(str(gradient_analysis).encode()).hexdigest()
                 terrain_analysis = _self._classify_terrain_type(gradient_hash, gradient_analysis)
                 stats['terrain_analysis'] = terrain_analysis
+                
+                step_duration = time.time() - step_start_time
+                log_performance(logger, "classify_terrain_type", step_duration,
+                              f"terrain={terrain_analysis.get('primary_terrain_type', 'unknown')}")
+                logger.info(f"✅ Step 6 completed: Primary terrain type {terrain_analysis.get('primary_terrain_type', 'unknown')}")
+                
                 if tracker:
                     tracker.complete_step("terrain")
                 
                 # Step 7: Power requirements analysis for ML features
+                step_start_time = time.time()
+                logger.info("⚡ Step 7: Starting power requirements analysis")
                 if tracker:
                     tracker.start_step("power")
                 power_analysis = _self._estimate_power_requirements(gradient_analysis, total_distance)
                 stats['power_analysis'] = power_analysis
+                
+                step_duration = time.time() - step_start_time
+                log_performance(logger, "estimate_power_requirements", step_duration,
+                              f"avg_power={power_analysis.get('estimated_average_power_w', 0):.0f}W")
+                logger.info(f"✅ Step 7 completed: Estimated average power {power_analysis.get('estimated_average_power_w', 0):.0f}W")
+                
                 if tracker:
                     tracker.complete_step("power")
                 
                 # Step 8: Generate ML features
+                step_start_time = time.time()
+                logger.info("🤖 Step 8: Starting ML features generation")
                 if tracker:
                     tracker.start_step("ml_features")
                 
@@ -1144,11 +1261,18 @@ class RouteProcessor:
                 }
                 
                 stats['ml_features'] = ml_features
+                step_duration = time.time() - step_start_time
+                log_performance(logger, "generate_ml_features", step_duration,
+                              f"difficulty_index={ml_features.get('difficulty_index', 0):.3f}")
+                logger.info(f"✅ Step 8 completed: Difficulty index {ml_features.get('difficulty_index', 0):.3f}")
+                
                 if tracker:
                     tracker.complete_step("ml_features")
                 
                 # Traffic stop analysis (optional - can be very slow)
                 if include_traffic_analysis:
+                    step_start_time = time.time()
+                    logger.info("🚦 Step 9: Starting traffic stop analysis (optional)")
                     try:
                         # Use separate progress tracker for traffic analysis
                         if show_progress:
@@ -1156,6 +1280,11 @@ class RouteProcessor:
                             st.markdown("### 🚦 Additional Traffic Analysis")
                         traffic_analysis = _self._analyze_traffic_stops_with_progress(all_points, stats, show_progress)
                         stats['traffic_analysis'] = traffic_analysis
+                        
+                        step_duration = time.time() - step_start_time
+                        log_performance(logger, "analyze_traffic_stops", step_duration,
+                                      f"stops={traffic_analysis.get('total_potential_stops', 0)}, lights={traffic_analysis.get('traffic_lights_detected', 0)}")
+                        logger.info(f"✅ Step 9 completed: Found {traffic_analysis.get('total_potential_stops', 0)} potential stops, {traffic_analysis.get('traffic_lights_detected', 0)} traffic lights")
                         
                         # Add traffic-related ML features if traffic analysis was successful
                         if traffic_analysis.get('analysis_available'):
@@ -1168,6 +1297,11 @@ class RouteProcessor:
                                 )
                             })
                     except Exception as e:
+                        step_duration = time.time() - step_start_time
+                        log_error(logger, e, "Traffic analysis failed")
+                        log_performance(logger, "analyze_traffic_stops [FAILED]", step_duration)
+                        logger.warning(f"⚠️ Step 9 failed: Traffic analysis error - {str(e)}")
+                        
                         stats['traffic_analysis'] = {
                             'analysis_available': False,
                             'reason': f'Traffic analysis failed: {str(e)}',
@@ -1176,6 +1310,7 @@ class RouteProcessor:
                             'total_potential_stops': 0
                         }
                 else:
+                    logger.info("🚦 Step 9: Skipping traffic analysis (disabled for performance)")
                     stats['traffic_analysis'] = {
                         'analysis_available': False,
                         'reason': 'Traffic analysis disabled for performance',
@@ -1184,12 +1319,27 @@ class RouteProcessor:
                         'total_potential_stops': 0
                     }
             
+            # Complete progress tracking
             if tracker:
                 tracker.finish()
+            
+            # Log completion with summary statistics
+            total_duration = time.time() - analysis_start_time
+            log_performance(logger, "calculate_route_statistics [COMPLETE]", total_duration,
+                          f"distance={stats['total_distance_km']}km, points={stats['total_points']}, climbs={len(stats.get('climb_analysis', {}).get('climbs', []))}")
+            
+            logger.info(f"🎉 Route analysis completed successfully!")
+            logger.info(f"📈 Final summary: {stats['total_distance_km']}km route with {stats['total_points']} points, {stats['total_elevation_gain_m']}m elevation gain")
+            log_function_exit(logger, "calculate_route_statistics", stats)
             
             return stats
             
         except Exception as e:
+            total_duration = time.time() - analysis_start_time
+            log_error(logger, e, "Route analysis failed")
+            log_performance(logger, "calculate_route_statistics [FAILED]", total_duration)
+            logger.error("💥 Route analysis failed with error")
+            
             if tracker:
                 tracker.fail_step("analysis", str(e))
                 tracker.finish()
