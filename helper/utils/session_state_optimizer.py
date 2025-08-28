@@ -21,7 +21,7 @@ class SessionStateOptimizer:
         'athlete_info',  # Small athlete profile data
         
         # UI preferences (small, essential)  
-        'enable_custom_css', 'use_imperial',
+        'use_imperial',
         
         # Keep only the latest analysis (not all timestamped versions)
         'latest_analysis_dataframe',

@@ -65,41 +65,35 @@ class HeaderAndLayout:
                 """, unsafe_allow_html=True)
         
         with header_col2:
-            # Check if custom CSS is enabled for conditional styling
-            enable_custom_css = getattr(st.session_state, 'enable_custom_css', True)
-            
-            if enable_custom_css:
-                st.markdown("""
-                <div class="main-header">
-                    <h1>KOMpass</h1>
-                    <p>Your intelligent cycling route analysis companion</p>
-                </div>
-                """, unsafe_allow_html=True)
-            else:
-                # Simple header without custom styling
-                st.title("🧭 KOMpass")
-                st.markdown("*Your intelligent cycling route analysis companion*")
+            # Custom CSS is always enabled - display header
+            st.markdown("""
+            <div class="main-header">
+                <h1>KOMpass</h1>
+                <p>Your intelligent cycling route analysis companion</p>
+            </div>
+            """, unsafe_allow_html=True)
         
         with header_col3:
-            # CSS toggle in header (not sidebar)
+            # Remove CSS toggle - custom CSS is always enabled
             st.markdown("##### ⚙️")
-            enable_custom_css = st.toggle(
-                "Custom Styling", 
-                value=False,
-                key="enable_custom_css",
-                help="Enable Strava-inspired custom styling. Disable to use default Streamlit styling."
-            )
-            
-            # Note: CSS preference is automatically stored in session state by the toggle widget
+            st.markdown("*Custom styling enabled*")
     
     def _load_custom_css(self):
         """Load custom CSS for Strava-inspired styling."""
         
-        # Only apply custom CSS if enabled
-        enable_custom_css = getattr(st.session_state, 'enable_custom_css', True)
+        # Custom CSS is always enabled now
         
-        if not enable_custom_css:
-            return
+        # Try to load external CSS file first
+        try:
+            with open("/home/runner/work/KOMpass/KOMpass/assets/style.css", "r") as f:
+                css_content = f.read()
+            st.markdown(f"<style>{css_content}</style>", unsafe_allow_html=True)
+        except FileNotFoundError:
+            logger.warning("External CSS file not found, using inline CSS")
+            # Fallback to inline CSS if external file not found
+            pass
+        
+        # Additional inline CSS for header and components
         
         strava_css = """
         <style>
@@ -296,15 +290,16 @@ class HeaderAndLayout:
             
             st.markdown("---")
             
-            # Strava connection status
+            # Strava connection section
+            st.markdown("### Strava Integration")
             if self.auth_manager.is_authenticated():
                 st.success("✅ Connected to Strava")
                 if st.button("🔓 Disconnect from Strava"):
                     self.auth_manager.logout()
                     st.rerun()
             else:
-                st.warning("⚠️ Not connected to Strava")
-                st.markdown("Connect to Strava for enhanced features like rider data analysis.")
+                # Render the complete authentication UI with sign-in button
+                self.auth_manager.render_authentication_ui()
             
             st.markdown("---")
             
