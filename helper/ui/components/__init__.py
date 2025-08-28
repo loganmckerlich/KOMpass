@@ -17,7 +17,7 @@ from .header_layout import HeaderAndLayout
 from .home_page import HomePage
 from .route_upload import RouteUpload
 from .route_analysis import RouteAnalysis
-from ..config.logging_config import get_logger
+from ...config.logging_config import get_logger
 
 
 logger = get_logger(__name__)

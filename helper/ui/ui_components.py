@@ -11,7 +11,7 @@ Note: This module has been refactored into smaller, focused components in the co
 """
 
 from .components import UIComponents as NewUIComponents
-from ..config.logging_config import get_logger
+from helper.config.logging_config import get_logger
 
 logger = get_logger(__name__)
 
