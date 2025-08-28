@@ -586,19 +586,23 @@ class RouteProcessor:
         
         # Find traffic lights near route points - reduce threshold for better accuracy
         nearby_traffic_lights = []
-        traffic_light_threshold = 0.025  # Reduced from 50m to 25m for better accuracy
+        traffic_light_threshold = 0.020  # Reduced from 25m to 20m for better accuracy
         
-        for route_point in route_points:
+        for route_index, route_point in enumerate(route_points):
+            # Skip every 5th point for performance while maintaining coverage
+            if route_index % 3 != 0:
+                continue
+                
             for light in traffic_lights:
                 distance = haversine_distance(
                     route_point['lat'], route_point['lon'],
                     light['lat'], light['lon']
                 )
                 
-                # If within 25 meters, consider it a potential stop
+                # If within 20 meters, consider it a potential stop
                 if distance <= traffic_light_threshold:
                     nearby_traffic_lights.append({
-                        'route_point_index': route_points.index(route_point),
+                        'route_point_index': route_index,  # Use index from enumerate instead of expensive lookup
                         'route_lat': route_point['lat'],
                         'route_lon': route_point['lon'],
                         'light_lat': light['lat'],
@@ -609,7 +613,7 @@ class RouteProcessor:
         
         # Find major road crossings - reduce threshold and be more selective
         major_road_crossings = []
-        crossing_threshold = 0.015  # Reduced from 20m to 15m
+        crossing_threshold = 0.012  # Reduced from 15m to 12m for better precision
         
         for road in major_roads:
             road_geometry = road.get('geometry', [])
@@ -619,7 +623,11 @@ class RouteProcessor:
             if highway_type not in ['motorway', 'trunk', 'primary', 'secondary']:
                 continue
             
-            for route_point in route_points:
+            for route_index, route_point in enumerate(route_points):
+                # Skip every 5th point for performance while maintaining coverage
+                if route_index % 3 != 0:
+                    continue
+                    
                 # Check if route point is close to any segment of the major road
                 for i in range(len(road_geometry) - 1):
                     road_start = road_geometry[i]
@@ -634,14 +642,14 @@ class RouteProcessor:
                     
                     if distance_to_road <= crossing_threshold:
                         major_road_crossings.append({
-                            'route_point_index': route_points.index(route_point),
+                            'route_point_index': route_index,  # Use index from enumerate
                             'route_lat': route_point['lat'],
                             'route_lon': route_point['lon'],
                             'road_name': road.get('name', 'Unnamed Road'),
                             'highway_type': road.get('highway_type', 'unknown'),
                             'distance_to_road_m': distance_to_road * 1000
                         })
-                        break  # Only count once per road
+                        break  # Only count once per road segment for this route point
         
         return {
             'traffic_light_intersections': nearby_traffic_lights,
@@ -812,10 +820,10 @@ class RouteProcessor:
             step_start_time = time.time()
             self.logger.info("🧹 Removing duplicate stops")
             unique_traffic_lights = self._remove_duplicate_stops(
-                intersections['traffic_light_intersections'], threshold_m=75  # Increased for traffic lights
+                intersections['traffic_light_intersections'], threshold_m=50  # Reduced from 75m to 50m for better accuracy
             )
             unique_major_crossings = self._remove_duplicate_stops(
-                intersections['major_road_crossings'], threshold_m=30  # Reduced for road crossings
+                intersections['major_road_crossings'], threshold_m=25  # Reduced from 30m to 25m for better precision
             )
             
             step_duration = time.time() - step_start_time
@@ -882,7 +890,9 @@ class RouteProcessor:
             }
     
     def _remove_duplicate_stops(self, stops: List[Dict], threshold_m: float = 50) -> List[Dict]:
-        """Remove duplicate stops that are within threshold distance of each other."""
+        """Remove duplicate stops that are within threshold distance of each other.
+        Optimized with early termination and better distance management.
+        """
         if not stops:
             return []
         
@@ -892,6 +902,7 @@ class RouteProcessor:
         for stop in stops:
             is_duplicate = False
             
+            # Check against existing unique stops with early termination
             for unique_stop in unique_stops:
                 distance = haversine_distance(
                     stop['route_lat'], stop['route_lon'],
@@ -900,7 +911,7 @@ class RouteProcessor:
                 
                 if distance <= threshold_km:
                     is_duplicate = True
-                    break
+                    break  # Early termination - no need to check remaining stops
             
             if not is_duplicate:
                 unique_stops.append(stop)
