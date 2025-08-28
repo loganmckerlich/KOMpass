@@ -48,6 +48,9 @@ class AppConfig:
     data_directory: str = "saved_routes"
     max_file_size_mb: int = 10
     supported_file_types: list = None
+    # Feature flags for temporarily disabling analysis features
+    enable_traffic_analysis: bool = False  # Temporarily disabled
+    enable_weather_analysis: bool = False  # Temporarily disabled
     
     def __post_init__(self):
         if self.supported_file_types is None:
@@ -168,9 +171,13 @@ class ConfigManager:
             log_to_file=os.environ.get("LOG_TO_FILE", "true").lower() == "true",
             data_directory=os.environ.get("DATA_DIRECTORY", "saved_routes"),
             max_file_size_mb=int(os.environ.get("MAX_FILE_SIZE_MB", "10")),
+            # Feature flags - temporarily disabled by default
+            enable_traffic_analysis=os.environ.get("ENABLE_TRAFFIC_ANALYSIS", "false").lower() == "true",
+            enable_weather_analysis=os.environ.get("ENABLE_WEATHER_ANALYSIS", "false").lower() == "true",
         )
         
         logger.debug(f"App config loaded - Log level: {config.log_level}")
+        logger.info(f"Feature flags - Traffic analysis: {config.enable_traffic_analysis}, Weather analysis: {config.enable_weather_analysis}")
         return config
     
     def _load_weather_config(self) -> WeatherConfig:
@@ -270,6 +277,8 @@ class ConfigManager:
             "weather_service": self._weather_config.base_url,
             "s3_enabled": self._s3_config.enabled,
             "s3_configured": self._s3_config.is_configured(),
+            "traffic_analysis_enabled": self._app_config.enable_traffic_analysis,
+            "weather_analysis_enabled": self._app_config.enable_weather_analysis,
         }
     
     def validate_configuration(self) -> Dict[str, bool]:
@@ -284,6 +293,7 @@ class ConfigManager:
         # Validate app config
         validation_results["valid_log_level"] = self._app_config.log_level in ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
         validation_results["data_directory_exists"] = os.path.exists(self._app_config.data_directory) or self._create_data_directory()
+        validation_results["feature_flags_valid"] = isinstance(self._app_config.enable_traffic_analysis, bool) and isinstance(self._app_config.enable_weather_analysis, bool)
         
         # Validate weather config
         validation_results["weather_url_valid"] = self._weather_config.base_url.startswith("http")
