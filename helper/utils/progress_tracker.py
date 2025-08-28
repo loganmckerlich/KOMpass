@@ -130,8 +130,13 @@ class ProgressTracker:
         progress = (completed_weight + current_running_weight) / max(total_weight, 1)
         progress = min(progress, 1.0)
         
-        # Update progress bar
-        self.progress_bar.progress(progress)
+        # Update progress bar (check if still exists)
+        if self.progress_bar:
+            try:
+                self.progress_bar.progress(progress)
+            except:
+                # Progress bar might have been cleared, skip update
+                pass
         
         # Generate status message
         running_step = next((step for step in self.steps if step['status'] == 'running'), None)
@@ -163,24 +168,62 @@ class ProgressTracker:
             
             step_status.append(f"{icon} {step['description']}")
         
-        # Update status display
-        status_display = f"{status_msg}\n\n" + "\n".join(step_status)
-        self.status_text.markdown(status_display)
+        # Update status display (check if still exists)
+        if self.status_text:
+            try:
+                status_display = f"{status_msg}\n\n" + "\n".join(step_status)
+                self.status_text.markdown(status_display)
+            except:
+                # Status text might have been cleared, skip update
+                pass
     
     def finish(self):
         """Clean up progress tracking."""
-        if self.progress_bar:
-            self.progress_bar.progress(1.0)
-        
         total_time = time.time() - self.start_time if self.start_time else 0
         failed_steps = [step for step in self.steps if step['status'] == 'failed']
         
+        # Complete the progress bar to 100%
+        if self.progress_bar:
+            try:
+                self.progress_bar.progress(1.0)
+            except:
+                # Progress bar might have been cleared already
+                pass
+        
+        # Show final status message
         if failed_steps:
             if self.status_text:
-                self.status_text.error(f"❌ Process completed with {len(failed_steps)} error(s) in {total_time:.1f}s")
+                try:
+                    self.status_text.error(f"❌ Process completed with {len(failed_steps)} error(s) in {total_time:.1f}s")
+                except:
+                    # Status text might have been cleared already
+                    pass
         else:
             if self.status_text:
-                self.status_text.success(f"✅ {self.title} completed successfully in {total_time:.1f}s")
+                try:
+                    self.status_text.success(f"✅ {self.title} completed successfully in {total_time:.1f}s")
+                except:
+                    # Status text might have been cleared already
+                    pass
+        
+        # Clear only the progress bar to prevent accumulation, but keep the final status message
+        if self.progress_bar:
+            try:
+                self.progress_bar.empty()
+            except:
+                # Progress bar might have been cleared already
+                pass
+            finally:
+                self.progress_bar = None
+    
+    def _clear_ui_elements(self):
+        """Clear all UI elements completely."""
+        if self.progress_bar:
+            self.progress_bar.empty()
+            self.progress_bar = None
+        if self.status_text:
+            self.status_text.empty()
+            self.status_text = None
     
     @contextmanager
     def track_step(self, step_name: str):
