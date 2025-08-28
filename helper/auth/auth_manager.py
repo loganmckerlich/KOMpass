@@ -254,6 +254,14 @@ class AuthenticationManager:
             log_error(logger, e, "Failed to generate ML features")
             return None
     
+    def get_oauth_client(self):
+        """Get the OAuth client instance."""
+        return self.oauth_client
+    
+    def get_access_token(self) -> Optional[str]:
+        """Get the current access token from session state."""
+        return st.session_state.get("access_token")
+    
     def refresh_access_token(self) -> bool:
         """Refresh expired access token."""
         log_function_entry(logger, "refresh_access_token")
