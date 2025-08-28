@@ -353,8 +353,7 @@ class AuthenticationManager:
         log_function_entry(logger, "render_authentication_ui")
         
         if not self.is_oauth_configured():
-            st.error("❌ Strava OAuth not configured")
-            st.info("Please configure your Strava credentials to use authentication features.")
+            self._render_unconfigured_ui()
             log_function_exit(logger, "render_authentication_ui")
             return
         
@@ -366,6 +365,48 @@ class AuthenticationManager:
         log_function_exit(logger, "render_authentication_ui")
 
 
+
+    def _render_unconfigured_ui(self):
+        """Render UI when Strava OAuth is not configured."""
+        # Show a friendly placeholder button that looks like a sign-in button
+        st.markdown("""
+        <div style="
+            background: linear-gradient(90deg, #FC4C02 0%, #FF6B35 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-family: 'Inter', sans-serif;
+            font-weight: 500;
+            padding: 0.5rem 1rem;
+            text-align: center;
+            box-shadow: 0 2px 4px rgba(252, 76, 2, 0.2);
+            margin: 0.5rem 0;
+            opacity: 0.7;
+        ">
+            🚴 Connect with Strava
+        </div>
+        """, unsafe_allow_html=True)
+        
+        st.info("💡 Strava integration requires API credentials to be configured.")
+        
+        # Instructions for setup
+        with st.expander("ℹ️ How to enable Strava integration"):
+            st.markdown("""
+            **To enable Strava integration:**
+            
+            1. Go to [Strava API Settings](https://www.strava.com/settings/api)
+            2. Create a new application or use an existing one
+            3. Copy your Client ID and Client Secret
+            4. Set the following environment variables:
+               - `STRAVA_CLIENT_ID=your_client_id`
+               - `STRAVA_CLIENT_SECRET=your_client_secret`
+            5. Set the Authorization Callback Domain to match your app's domain
+            
+            **Benefits of connecting Strava:**
+            - Access your recent activities
+            - Enhanced performance analysis
+            - Personalized insights based on your cycling data
+            """)
 
     def _render_authenticated_ui(self):
         """Render minimal UI for authenticated users."""

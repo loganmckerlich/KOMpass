@@ -74,9 +74,8 @@ class HeaderAndLayout:
             """, unsafe_allow_html=True)
         
         with header_col3:
-            # Remove CSS toggle - custom CSS is always enabled
+            # Settings icon placeholder for future use
             st.markdown("##### ⚙️")
-            st.markdown("*Custom styling enabled*")
     
     def _load_custom_css(self):
         """Load custom CSS for Strava-inspired styling."""
