@@ -325,11 +325,13 @@ class RouteAnalysis:
             return
         
         try:
-            # Use first coordinate for weather location
-            first_coord = route_data['coordinates'][0]
-            weather_data = self.weather_analyzer.analyze_route_weather(
-                first_coord['lat'], 
-                first_coord['lon']
+            # Use all route coordinates for comprehensive weather analysis
+            route_points = route_data['coordinates']
+            # If timing information is available, pass it; otherwise, pass None
+            timing = route_data.get('timestamps', None)
+            weather_data = self.weather_analyzer.get_comprehensive_weather_analysis(
+                route_points,
+                timing
             )
             
             if weather_data:
