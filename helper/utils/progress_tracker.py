@@ -154,24 +154,24 @@ class ProgressTracker:
         else:
             status_msg = f"**{self.title}** - {completed_count}/{len(self.steps)} steps completed"
         
-        # Show step-by-step status
-        step_status = []
-        for i, step in enumerate(self.steps):
-            if step['status'] == 'completed':
-                icon = "✅"
-            elif step['status'] == 'running':
-                icon = "🔄"
-            elif step['status'] == 'failed':
-                icon = "❌"
-            else:
-                icon = "⏳"
-            
-            step_status.append(f"{icon} {step['description']}")
+        # Show only current step status (not all previous steps)
+        current_step_status = ""
+        running_step = next((step for step in self.steps if step['status'] == 'running'), None)
+        
+        if running_step:
+            current_step_status = f"🔄 {running_step['description']}"
+        elif completed_count == len(self.steps):
+            # Show completion message
+            current_step_status = "✅ All steps completed"
+        elif failed_count > 0:
+            failed_step = next((step for step in self.steps if step['status'] == 'failed'), None)
+            if failed_step:
+                current_step_status = f"❌ {failed_step['description']}"
         
         # Update status display (check if still exists)
         if self.status_text:
             try:
-                status_display = f"{status_msg}\n\n" + "\n".join(step_status)
+                status_display = f"{status_msg}\n\n{current_step_status}" if current_step_status else status_msg
                 self.status_text.markdown(status_display)
             except:
                 # Status text might have been cleared, skip update

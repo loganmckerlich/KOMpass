@@ -20,6 +20,7 @@ import hashlib
 from ..storage.storage_manager import get_storage_manager
 from ..utils.progress_tracker import ProgressTracker, create_route_analysis_tracker, create_traffic_analysis_tracker
 from ..config.logging_config import get_logger, log_function_entry, log_function_exit, log_performance, log_error
+from ..config.config import get_config
 # FIT support removed - GPX only
 
 @st.cache_data(ttl=3600)  # Cache for 1 hour
@@ -84,6 +85,7 @@ class RouteProcessor:
         self.data_dir = data_dir
         self.storage_manager = get_storage_manager()
         self.logger = get_logger(__name__)
+        self.config = get_config()
         self._ensure_data_dir()
         
         # Overpass API configuration for OpenStreetMap queries
@@ -1087,7 +1089,7 @@ class RouteProcessor:
             stats = self.calculate_route_statistics(
                 route_data_hash, 
                 route_data, 
-                include_traffic_analysis=True, 
+                include_traffic_analysis=self.config.app.enable_traffic_analysis, 
                 show_progress=True
             )
             
@@ -1157,7 +1159,7 @@ class RouteProcessor:
             stats = self.calculate_route_statistics(
                 route_data_hash, 
                 converted_route_data, 
-                include_traffic_analysis=True, 
+                include_traffic_analysis=self.config.app.enable_traffic_analysis, 
                 show_progress=True
             )
             
