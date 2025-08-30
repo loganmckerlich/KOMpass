@@ -125,7 +125,7 @@ class RouteAnalysis:
             route_map = folium.Map(
                 location=[center_lat, center_lon],
                 zoom_start=13,
-                tiles='OpenStreetMap'
+                tiles='Cartodb Positron'
             )
             
             # Add route polyline
