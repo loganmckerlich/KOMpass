@@ -163,16 +163,21 @@ class RouteAnalysis:
         """Render key performance indicators."""
         log_function_entry(logger, "render_route_kpis")
         
+        # Check for user unit preference (default to metric for now)
+        use_imperial = st.session_state.get('use_imperial', False)
+        
         # Basic metrics row
         col1, col2, col3, col4 = st.columns(4)
         
         with col1:
             distance = stats.get('total_distance_km', 0)
-            st.metric("🚴 Distance", f"{distance:.1f} km")
+            distance_formatted = UnitConverter.format_distance(distance, use_imperial)
+            st.metric("🚴 Distance", distance_formatted)
         
         with col2:
             elevation_gain = stats.get('total_elevation_gain_m', 0)
-            st.metric("⛰️ Elevation Gain", f"{elevation_gain:.0f} m")
+            elevation_formatted = UnitConverter.format_elevation(elevation_gain, use_imperial)
+            st.metric("⛰️ Elevation Gain", elevation_formatted)
         
         with col3:
             avg_gradient = stats.get('average_gradient', 0)
@@ -193,7 +198,8 @@ class RouteAnalysis:
         
         with col6:
             avg_speed = stats.get('estimated_average_speed', 0)
-            st.metric("🚀 Est. Speed", f"{avg_speed:.1f} km/h")
+            speed_formatted = UnitConverter.format_speed(avg_speed, use_imperial)
+            st.metric("🚀 Est. Speed", speed_formatted)
         
         with col7:
             difficulty = stats.get('difficulty_rating', 'Unknown')
@@ -381,7 +387,7 @@ class RouteAnalysis:
     
     def _get_simple_terrain_type(self, gradient_analysis: Dict) -> str:
         """Get simplified terrain type from gradient analysis."""
-        avg_gradient = gradient_analysis.get('average_gradient_percent', 0)
+        avg_gradient = gradient_analysis.get('average_gradient', 0)
         
         if avg_gradient > 3:
             return "Hilly"
