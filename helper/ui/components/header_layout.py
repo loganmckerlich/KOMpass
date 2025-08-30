@@ -281,11 +281,21 @@ class HeaderAndLayout:
             st.markdown("---")
             
             # Main navigation
+            # Initialize selected page index in session state if not exists
+            if 'selected_page_index' not in st.session_state:
+                st.session_state['selected_page_index'] = 0
+            
             selected_page = st.radio(
                 "Choose a page:",
                 ["🏠 Home", "📁 Route Upload", "📊 Dashboard"],
-                index=0
+                index=st.session_state['selected_page_index'],
+                key="page_selector"
             )
+            
+            # Update session state when radio selection changes
+            page_options = ["🏠 Home", "📁 Route Upload", "📊 Dashboard"]
+            if selected_page in page_options:
+                st.session_state['selected_page_index'] = page_options.index(selected_page)
             
             st.markdown("---")
             
