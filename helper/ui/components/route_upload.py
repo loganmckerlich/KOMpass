@@ -278,7 +278,7 @@ class RouteUpload:
             streams = oauth_client.get_activity_streams(
                 access_token, 
                 activity_id, 
-                ['latlng', 'altitude', 'distance', 'time']
+                'latlng,altitude,distance,time'
             )
             
             if not streams:
