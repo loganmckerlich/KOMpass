@@ -232,14 +232,22 @@ class RouteAnalysis:
         """Render elevation analysis section."""
         st.markdown("### ⛰️ Elevation Analysis")
         
+        # Check for user unit preference (default to metric for now)
+        use_imperial = st.session_state.get('use_imperial', False)
+        
         col1, col2 = st.columns(2)
         
         with col1:
             st.markdown("**Elevation Statistics:**")
-            st.write(f"• Min Elevation: {elevation_data.get('min_elevation', 0):.0f} m")
-            st.write(f"• Max Elevation: {elevation_data.get('max_elevation', 0):.0f} m")
-            st.write(f"• Total Ascent: {elevation_data.get('total_ascent', 0):.0f} m")
-            st.write(f"• Total Descent: {elevation_data.get('total_descent', 0):.0f} m")
+            min_elevation = elevation_data.get('min_elevation', 0)
+            max_elevation = elevation_data.get('max_elevation', 0)
+            total_ascent = elevation_data.get('total_ascent', 0)
+            total_descent = elevation_data.get('total_descent', 0)
+            
+            st.write(f"• Min Elevation: {UnitConverter.format_elevation(min_elevation, use_imperial)}")
+            st.write(f"• Max Elevation: {UnitConverter.format_elevation(max_elevation, use_imperial)}")
+            st.write(f"• Total Ascent: {UnitConverter.format_elevation(total_ascent, use_imperial)}")
+            st.write(f"• Total Descent: {UnitConverter.format_elevation(total_descent, use_imperial)}")
         
         with col2:
             if 'climbs' in elevation_data and elevation_data['climbs']:
@@ -250,7 +258,7 @@ class RouteAnalysis:
                     avg_gradient = climb.get('avg_gradient', 0)
                     st.write(f"• {category}: {length:.1f}km @ {avg_gradient:.1f}%")
             else:
-                st.write("No significant climbs detected")
+                st.write("• Uncategorized: 0.0km @ 0.0%")
     
     def _render_gradient_analysis(self, gradient_data: Dict):
         """Render gradient analysis section."""
@@ -315,7 +323,26 @@ class RouteAnalysis:
     
     def _ensure_comprehensive_analysis(self, route_data: Dict, stats: Dict, filename: str) -> Dict:
         """Ensure all analysis components are complete."""
-        # This is a simplified version - would normally ensure all analysis is complete
+        # Create elevation_analysis data structure from stats
+        if 'elevation_analysis' not in route_data:
+            route_data['elevation_analysis'] = {
+                'min_elevation': stats.get('min_elevation_m', 0),
+                'max_elevation': stats.get('max_elevation_m', 0),
+                'total_ascent': stats.get('total_elevation_gain_m', 0),
+                'total_descent': stats.get('total_elevation_loss_m', 0),
+                'climbs': stats.get('climb_analysis', {}).get('climbs', [])
+            }
+        
+        # Create gradient_analysis data structure from stats  
+        if 'gradient_analysis' not in route_data:
+            gradient_stats = stats.get('gradient_analysis', {})
+            route_data['gradient_analysis'] = {
+                'average_gradient': gradient_stats.get('average_gradient_percent', 0),
+                'max_gradient': gradient_stats.get('max_gradient_percent', 0),
+                'gradient_distribution': gradient_stats.get('gradient_distribution', {}),
+                'gradient_variability': gradient_stats.get('gradient_variability', 'Unknown')
+            }
+        
         return route_data
     
     def _perform_automatic_weather_analysis(self, route_data: Dict, stats: Dict):
