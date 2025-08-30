@@ -703,13 +703,32 @@ class AuthenticationManager:
         auth_url = self.get_authorization_url()
         
         if auth_url:
-            # Use st.link_button instead of custom HTML button
-            st.link_button(
-                "🚴 Connect with Strava",
-                auth_url,
-                help="Authorize KOMpass to access your Strava data",
-                type="primary"
-            )
+            # Use custom HTML link styled as button to prevent opening in new tab
+            st.markdown(f"""
+            <a href="{auth_url}" 
+               target="_self"
+               style="
+                   background: linear-gradient(90deg, #FC4C02 0%, #FF6B35 100%);
+                   color: white;
+                   border: none;
+                   border-radius: 8px;
+                   font-family: 'Inter', sans-serif;
+                   font-weight: 500;
+                   padding: 0.5rem 1rem;
+                   cursor: pointer;
+                   transition: all 0.2s ease;
+                   box-shadow: 0 2px 4px rgba(252, 76, 2, 0.2);
+                   margin: 0.5rem 0;
+                   font-size: 14px;
+                   text-decoration: none;
+                   display: inline-block;
+               "
+               onmouseover="this.style.background='linear-gradient(90deg, #E03D00 0%, #E55A2B 100%)'; this.style.transform='translateY(-1px)'; this.style.boxShadow='0 4px 8px rgba(252, 76, 2, 0.3)';"
+               onmouseout="this.style.background='linear-gradient(90deg, #FC4C02 0%, #FF6B35 100%)'; this.style.transform='translateY(0px)'; this.style.boxShadow='0 2px 4px rgba(252, 76, 2, 0.2)';"
+               title="Authorize KOMpass to access your Strava data">
+                🚴 Connect with Strava
+            </a>
+            """, unsafe_allow_html=True)
             
             st.info("👆 Click the button above to authorize KOMpass to access your Strava data.")
             
