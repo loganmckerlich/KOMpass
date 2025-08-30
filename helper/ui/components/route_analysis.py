@@ -315,7 +315,26 @@ class RouteAnalysis:
     
     def _ensure_comprehensive_analysis(self, route_data: Dict, stats: Dict, filename: str) -> Dict:
         """Ensure all analysis components are complete."""
-        # This is a simplified version - would normally ensure all analysis is complete
+        # Create elevation_analysis data structure from stats
+        if 'elevation_analysis' not in route_data:
+            route_data['elevation_analysis'] = {
+                'min_elevation': stats.get('min_elevation_m', 0),
+                'max_elevation': stats.get('max_elevation_m', 0),
+                'total_ascent': stats.get('total_elevation_gain_m', 0),
+                'total_descent': stats.get('total_elevation_loss_m', 0),
+                'climbs': stats.get('climb_analysis', {}).get('climbs', [])
+            }
+        
+        # Create gradient_analysis data structure from stats  
+        if 'gradient_analysis' not in route_data:
+            gradient_stats = stats.get('gradient_analysis', {})
+            route_data['gradient_analysis'] = {
+                'average_gradient': gradient_stats.get('average_gradient_percent', 0),
+                'max_gradient': gradient_stats.get('max_gradient_percent', 0),
+                'gradient_distribution': gradient_stats.get('gradient_distribution', {}),
+                'gradient_variability': gradient_stats.get('gradient_variability', 'Unknown')
+            }
+        
         return route_data
     
     def _perform_automatic_weather_analysis(self, route_data: Dict, stats: Dict):
