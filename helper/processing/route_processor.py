@@ -86,6 +86,10 @@ class RouteProcessor:
         self.logger = get_logger(__name__)
         self._ensure_data_dir()
         
+        # Load configuration to respect feature flags
+        from ..config.config import get_config
+        self.config = get_config()
+        
         # Overpass API configuration for OpenStreetMap queries
         self.overpass_url = "https://overpass-api.de/api/interpreter"
         self.request_delay = 1.0  # Seconds between API requests to be respectful
@@ -93,6 +97,7 @@ class RouteProcessor:
         self.logger.info("RouteProcessor initialized")
         self.logger.debug(f"Data directory: {self.data_dir}")
         self.logger.debug(f"Overpass API URL: {self.overpass_url}")
+        self.logger.info(f"Traffic analysis enabled: {self.config.app.enable_traffic_analysis}")
     
     @st.cache_data(ttl=7200)  # Cache for 2 hours
     def _analyze_gradients_and_climbs_combined(_self, points_hash: str, points: List[Dict]) -> Tuple[Dict, Dict]:
@@ -1087,7 +1092,7 @@ class RouteProcessor:
             stats = self.calculate_route_statistics(
                 route_data_hash, 
                 route_data, 
-                include_traffic_analysis=True, 
+                include_traffic_analysis=self.config.app.enable_traffic_analysis, 
                 show_progress=True
             )
             
@@ -1157,7 +1162,7 @@ class RouteProcessor:
             stats = self.calculate_route_statistics(
                 route_data_hash, 
                 converted_route_data, 
-                include_traffic_analysis=True, 
+                include_traffic_analysis=self.config.app.enable_traffic_analysis, 
                 show_progress=True
             )
             
@@ -1178,14 +1183,15 @@ class RouteProcessor:
             return None
     
     @st.cache_data(ttl=7200)  # Cache route statistics for 2 hours
-    def calculate_route_statistics(_self, route_data_hash: str, route_data: Dict, include_traffic_analysis: bool = True, show_progress: bool = True) -> Dict:
+    def calculate_route_statistics(_self, route_data_hash: str, route_data: Dict, include_traffic_analysis: bool = None, show_progress: bool = True) -> Dict:
         """Calculate comprehensive statistics for the route including ML-ready features.
         Cached for performance as route statistics calculation is computationally expensive.
         
         Args:
             route_data_hash: Hash of route data for caching
             route_data: Parsed route data dictionary
-            include_traffic_analysis: Whether to include traffic stop analysis (slow)
+            include_traffic_analysis: Whether to include traffic stop analysis (slow). 
+                                    If None, uses configuration setting.
             show_progress: Whether to show progress indicators
             
         Returns:
@@ -1194,11 +1200,17 @@ class RouteProcessor:
         Note: Uses leading underscore on self to exclude from caching key
         """
         logger = get_logger(__name__)
+        
+        # Handle default value for include_traffic_analysis
+        if include_traffic_analysis is None:
+            include_traffic_analysis = _self.config.app.enable_traffic_analysis
+        
         log_function_entry(logger, "calculate_route_statistics", 
                           include_traffic=include_traffic_analysis, show_progress=show_progress)
         
         analysis_start_time = time.time()
         logger.info("🚀 Starting comprehensive route analysis")
+        logger.info(f"🚦 Traffic analysis enabled: {include_traffic_analysis}")
         
         # Initialize progress tracker if requested
         tracker = None

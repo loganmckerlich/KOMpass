@@ -154,19 +154,23 @@ class ProgressTracker:
         else:
             status_msg = f"**{self.title}** - {completed_count}/{len(self.steps)} steps completed"
         
-        # Show step-by-step status
+        # Show step-by-step status - only show completed and current running step
         step_status = []
         for i, step in enumerate(self.steps):
             if step['status'] == 'completed':
                 icon = "✅"
+                step_status.append(f"{icon} {step['description']}")
             elif step['status'] == 'running':
                 icon = "🔄"
+                step_status.append(f"{icon} {step['description']}")
+                # Don't show pending steps after the current running step
+                break
             elif step['status'] == 'failed':
                 icon = "❌"
-            else:
-                icon = "⏳"
-            
-            step_status.append(f"{icon} {step['description']}")
+                step_status.append(f"{icon} {step['description']}")
+                # Don't show pending steps after a failed step
+                break
+            # Don't add pending steps to the display list - they'll appear when started
         
         # Update status display (check if still exists)
         if self.status_text:
