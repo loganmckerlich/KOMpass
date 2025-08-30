@@ -923,6 +923,53 @@ class RouteProcessor:
         
         return unique_stops
     
+    def _calculate_difficulty_rating(self, stats: Dict) -> str:
+        """Calculate a simple difficulty rating based on route metrics."""
+        try:
+            distance = stats.get('total_distance_km', 0)
+            elevation_gain = stats.get('total_elevation_gain_m', 0)
+            gradient_analysis = stats.get('gradient_analysis', {})
+            
+            # Calculate difficulty score based on multiple factors
+            score = 0
+            
+            # Distance factor (longer = harder)
+            if distance > 100:
+                score += 3
+            elif distance > 50:
+                score += 2
+            elif distance > 20:
+                score += 1
+            
+            # Elevation factor (more climbing = harder)
+            elevation_per_km = elevation_gain / max(distance, 1)
+            if elevation_per_km > 50:
+                score += 3
+            elif elevation_per_km > 25:
+                score += 2
+            elif elevation_per_km > 10:
+                score += 1
+            
+            # Gradient factor (steep sections = harder)
+            steep_percent = gradient_analysis.get('steep_climbs_percent', 0)
+            if steep_percent > 15:
+                score += 2
+            elif steep_percent > 5:
+                score += 1
+            
+            # Convert score to rating
+            if score >= 6:
+                return "Very Hard"
+            elif score >= 4:
+                return "Hard"
+            elif score >= 2:
+                return "Moderate"
+            else:
+                return "Easy"
+                
+        except Exception:
+            return "Unknown"
+    
     def _ensure_data_dir(self):
         """Create data directory if it doesn't exist."""
         if not os.path.exists(self.data_dir):
@@ -1007,6 +1054,18 @@ class RouteProcessor:
                     'description': waypoint.description
                 }
                 route_data['waypoints'].append(waypoint_data)
+            
+            # Extract flattened coordinates array for UI components (especially map display)
+            coordinates = []
+            # Add all track segment points
+            for track in route_data['tracks']:
+                for segment in track['segments']:
+                    coordinates.extend(segment)
+            # Add all route points
+            for route in route_data['routes']:
+                coordinates.extend(route.get('points', []))
+            
+            route_data['coordinates'] = coordinates
             
             return route_data
             
@@ -1468,6 +1527,54 @@ class RouteProcessor:
             # Complete progress tracking
             if tracker:
                 tracker.finish()
+            
+            # Flatten key metrics for UI consumption
+            # Extract commonly used metrics from nested analysis objects to top level
+            gradient_analysis = stats.get('gradient_analysis', {})
+            complexity_analysis = stats.get('complexity_analysis', {})
+            power_analysis = stats.get('power_analysis', {})
+            traffic_analysis = stats.get('traffic_analysis', {})
+            
+            # Calculate basic time and speed estimates
+            distance_km = stats.get('total_distance_km', 0)
+            elevation_gain_m = stats.get('total_elevation_gain_m', 0)
+            
+            # Simple speed estimation based on terrain
+            if distance_km > 0:
+                # Base speed: 25 km/h on flat terrain
+                base_speed = 25.0
+                
+                # Adjust for elevation gain (slower on climbs)
+                elevation_factor = max(0.5, 1.0 - (elevation_gain_m / distance_km) * 0.01)
+                
+                # Adjust for gradient difficulty
+                avg_gradient = gradient_analysis.get('average_gradient_percent', 0)
+                gradient_factor = max(0.6, 1.0 - (avg_gradient * 0.02))
+                
+                estimated_speed = base_speed * elevation_factor * gradient_factor
+                estimated_time_minutes = (distance_km / estimated_speed) * 60
+            else:
+                estimated_speed = 0
+                estimated_time_minutes = 0
+            
+            # Add UI-expected metrics at top level
+            stats.update({
+                # Gradient metrics
+                'average_gradient': gradient_analysis.get('average_gradient_percent', 0),
+                'max_gradient': gradient_analysis.get('max_gradient_percent', 0),
+                
+                # Performance estimates
+                'estimated_time_minutes': round(estimated_time_minutes, 1),
+                'estimated_average_speed': round(estimated_speed, 1),
+                
+                # Difficulty and complexity
+                'difficulty_rating': _self._calculate_difficulty_rating(stats),
+                'route_complexity_score': complexity_analysis.get('complexity_score', 0),
+                
+                # Traffic metrics (for UI display)
+                'traffic_points': traffic_analysis.get('traffic_lights_detected', 0),
+                'intersections': traffic_analysis.get('major_road_crossings', 0),
+            })
             
             # Log completion with summary statistics
             total_duration = time.time() - analysis_start_time
