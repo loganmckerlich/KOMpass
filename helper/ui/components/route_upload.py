@@ -392,11 +392,12 @@ class RouteUpload:
                 st.rerun()
         
         # Extract stats and route data for analysis
-        stats = route_data.get('stats', {})
+        stats = route_data.get('statistics', {})
+        actual_route_data = route_data.get('route_data', route_data)
         
         # Use the RouteAnalysis component to render the analysis
         from .route_analysis import RouteAnalysis
         route_analyzer = RouteAnalysis()
-        route_analyzer.render_route_analysis(route_data, stats, filename)
+        route_analyzer.render_route_analysis(actual_route_data, stats, filename)
         
         log_function_exit(logger, "render_route_analysis_results")
