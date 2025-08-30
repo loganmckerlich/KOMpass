@@ -167,11 +167,11 @@ class RouteAnalysis:
         col1, col2, col3, col4 = st.columns(4)
         
         with col1:
-            distance = stats.get('total_distance', 0)
+            distance = stats.get('total_distance_km', 0)
             st.metric("🚴 Distance", f"{distance:.1f} km")
         
         with col2:
-            elevation_gain = stats.get('total_elevation_gain', 0)
+            elevation_gain = stats.get('total_elevation_gain_m', 0)
             st.metric("⛰️ Elevation Gain", f"{elevation_gain:.0f} m")
         
         with col3:
@@ -381,7 +381,7 @@ class RouteAnalysis:
     
     def _get_simple_terrain_type(self, gradient_analysis: Dict) -> str:
         """Get simplified terrain type from gradient analysis."""
-        avg_gradient = gradient_analysis.get('average_gradient', 0)
+        avg_gradient = gradient_analysis.get('average_gradient_percent', 0)
         
         if avg_gradient > 3:
             return "Hilly"
