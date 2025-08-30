@@ -36,6 +36,11 @@ class RouteUpload:
         """Render the route upload page with file upload and Strava options."""
         log_function_entry(logger, "render_route_upload_page")
         
+        # Check if we should show route analysis results
+        if st.session_state.get('show_analysis', False) and st.session_state.get('current_route'):
+            self._render_route_analysis_results()
+            return
+        
         st.markdown("# 📁 Route Upload")
         st.markdown("Upload a GPX file or import from Strava to analyze your cycling route")
         
@@ -359,3 +364,39 @@ class RouteUpload:
             logger.error(f"Error converting Strava streams to route: {e}")
             log_function_exit(logger, "convert_strava_streams_to_route")
             return None
+    
+    def _render_route_analysis_results(self):
+        """Render the route analysis results page."""
+        log_function_entry(logger, "render_route_analysis_results")
+        
+        # Get route data from session state
+        route_data = st.session_state.get('current_route')
+        
+        if not route_data:
+            st.error("❌ No route data found. Please upload a route first.")
+            if st.button("🔙 Back to Upload"):
+                st.session_state['show_analysis'] = False
+                st.rerun()
+            return
+        
+        # Display header with back button
+        col1, col2 = st.columns([3, 1])
+        with col1:
+            st.markdown("# 📊 Route Analysis Results")
+            filename = route_data.get('filename', 'Unknown Route')
+            st.markdown(f"**Route:** {filename}")
+        
+        with col2:
+            if st.button("🔙 Back to Upload", type="secondary"):
+                st.session_state['show_analysis'] = False
+                st.rerun()
+        
+        # Extract stats and route data for analysis
+        stats = route_data.get('stats', {})
+        
+        # Use the RouteAnalysis component to render the analysis
+        from .route_analysis import RouteAnalysis
+        route_analyzer = RouteAnalysis()
+        route_analyzer.render_route_analysis(route_data, stats, filename)
+        
+        log_function_exit(logger, "render_route_analysis_results")

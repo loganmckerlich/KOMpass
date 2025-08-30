@@ -94,9 +94,11 @@ def main():
             col1, col2 = st.columns(2)
             with col1:
                 if st.button("📁 Go to Route Upload", use_container_width=True):
+                    st.session_state['selected_page_index'] = 1  # Index for Route Upload
                     st.rerun()
             with col2:
                 if st.button("🏠 Go to Home", use_container_width=True):
+                    st.session_state['selected_page_index'] = 0  # Index for Home
                     st.rerun()
         
         else:
