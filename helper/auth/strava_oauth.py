@@ -194,7 +194,7 @@ class StravaOAuth:
         
         return response.json()
     
-    def get_athlete_activities(self, access_token: str, page: int = 1, per_page: int = 30, after_timestamp: Optional[int] = None) -> Dict:
+    def get_athlete_activities(self, access_token: str, page: int = 1, per_page: int = 30, after_timestamp: Optional[int] = None, before_timestamp: Optional[int] = None) -> Dict:
         """
         Get athlete's recent activities for fitness analysis.
         
@@ -203,6 +203,7 @@ class StravaOAuth:
             page: Page number for pagination
             per_page: Number of activities per page (max 200)
             after_timestamp: Unix timestamp to get activities after this time
+            before_timestamp: Unix timestamp to get activities before this time
             
         Returns:
             List of activity dictionaries
@@ -218,6 +219,9 @@ class StravaOAuth:
         
         if after_timestamp:
             params["after"] = after_timestamp
+            
+        if before_timestamp:
+            params["before"] = before_timestamp
         
         response = requests.get(f"{self.api_base_url}/athlete/activities", headers=headers, params=params)
         
@@ -227,6 +231,28 @@ class StravaOAuth:
             raise Exception(f"Failed to get athlete activities: {response.status_code} - {response.text}")
         
         return response.json()
+    
+    def get_activities(self, access_token: str, page: int = 1, per_page: int = 30, after: Optional[int] = None, before: Optional[int] = None) -> Dict:
+        """
+        Alias for get_athlete_activities to maintain backward compatibility.
+        
+        Args:
+            access_token: Valid Strava access token
+            page: Page number for pagination
+            per_page: Number of activities per page (max 200)
+            after: Unix timestamp to get activities after this time
+            before: Unix timestamp to get activities before this time
+            
+        Returns:
+            List of activity dictionaries
+        """
+        return self.get_athlete_activities(
+            access_token=access_token,
+            page=page,
+            per_page=per_page,
+            after_timestamp=after,
+            before_timestamp=before
+        )
     
     def get_activity_zones(self, access_token: str, activity_id: str) -> Dict:
         """
