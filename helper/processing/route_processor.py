@@ -1351,9 +1351,25 @@ class RouteProcessor:
             total_distance = 0
             elevations = [p['elevation'] for p in all_points if p['elevation'] is not None]
             
+            # Track elevation data quality
+            points_with_elevation = len(elevations)
+            elevation_data_percentage = (points_with_elevation / len(all_points)) * 100 if all_points else 0
+            
+            stats['elevation_data_quality'] = {
+                'has_elevation_data': points_with_elevation > 0,
+                'points_with_elevation': points_with_elevation,
+                'total_points': len(all_points),
+                'elevation_data_percentage': round(elevation_data_percentage, 1)
+            }
+            
             if elevations:
                 stats['max_elevation_m'] = max(elevations)
                 stats['min_elevation_m'] = min(elevations)
+                
+                # Check for meaningful elevation variation (more than 1 meter difference)
+                elevation_range = max(elevations) - min(elevations)
+                stats['elevation_data_quality']['elevation_range_m'] = round(elevation_range, 1)
+                stats['elevation_data_quality']['has_elevation_variation'] = elevation_range > 1.0
                 
                 # Calculate elevation gain/loss
                 for i in range(1, len(elevations)):
@@ -1362,6 +1378,9 @@ class RouteProcessor:
                         stats['total_elevation_gain_m'] += diff
                     else:
                         stats['total_elevation_loss_m'] += abs(diff)
+            else:
+                stats['elevation_data_quality']['elevation_range_m'] = 0
+                stats['elevation_data_quality']['has_elevation_variation'] = False
             
             # Calculate total distance
             for i in range(1, len(all_points)):

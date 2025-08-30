@@ -232,6 +232,26 @@ class RouteAnalysis:
         """Render elevation analysis section."""
         st.markdown("### ⛰️ Elevation Analysis")
         
+        # Check elevation data quality
+        data_quality = elevation_data.get('data_quality', {})
+        has_elevation_data = data_quality.get('has_elevation_data', True)  # Default to True for backward compatibility
+        has_elevation_variation = data_quality.get('has_elevation_variation', True)  # Default to True for backward compatibility
+        elevation_data_percentage = data_quality.get('elevation_data_percentage', 100)
+        
+        # Show elevation data warnings if needed
+        if not has_elevation_data:
+            st.warning("⚠️ **No elevation data found in this route**")
+            st.info("This GPX file doesn't contain elevation information. Elevation metrics will show as 0. To get elevation data, use a GPS device or app that records elevation, or use a service that adds elevation data to GPX files.")
+        elif elevation_data_percentage < 50:
+            st.warning(f"⚠️ **Limited elevation data**: Only {elevation_data_percentage:.1f}% of route points have elevation data")
+            st.info("This may result in inaccurate elevation metrics. Consider using a GPX file with complete elevation data.")
+        elif not has_elevation_variation:
+            elevation_range = data_quality.get('elevation_range_m', 0)
+            if elevation_range == 0:
+                st.info("ℹ️ **Flat route detected**: This route has no elevation changes (all points at same elevation)")
+            else:
+                st.info(f"ℹ️ **Minimal elevation changes**: Route elevation varies by only {elevation_range:.1f}m")
+        
         # Check for user unit preference (default to metric for now)
         use_imperial = st.session_state.get('use_imperial', False)
         
@@ -244,8 +264,14 @@ class RouteAnalysis:
             total_ascent = elevation_data.get('total_ascent', 0)
             total_descent = elevation_data.get('total_descent', 0)
             
-            st.write(f"• Min Elevation: {UnitConverter.format_elevation(min_elevation, use_imperial)}")
-            st.write(f"• Max Elevation: {UnitConverter.format_elevation(max_elevation, use_imperial)}")
+            # Handle None values for min/max elevation when no data is available
+            if min_elevation is None and max_elevation is None:
+                st.write("• Min Elevation: N/A (no elevation data)")
+                st.write("• Max Elevation: N/A (no elevation data)")
+            else:
+                st.write(f"• Min Elevation: {UnitConverter.format_elevation(min_elevation or 0, use_imperial)}")
+                st.write(f"• Max Elevation: {UnitConverter.format_elevation(max_elevation or 0, use_imperial)}")
+            
             st.write(f"• Total Ascent: {UnitConverter.format_elevation(total_ascent, use_imperial)}")
             st.write(f"• Total Descent: {UnitConverter.format_elevation(total_descent, use_imperial)}")
         
@@ -258,7 +284,12 @@ class RouteAnalysis:
                     avg_gradient = climb.get('avg_gradient', 0)
                     st.write(f"• {category}: {length:.1f}km @ {avg_gradient:.1f}%")
             else:
-                st.write("• Uncategorized: 0.0km @ 0.0%")
+                if not has_elevation_data:
+                    st.markdown("**Categorized Climbs:**")
+                    st.write("• No climbs detected (no elevation data)")
+                else:
+                    st.markdown("**Categorized Climbs:**")
+                    st.write("• No significant climbs detected")
     
     def _render_gradient_analysis(self, gradient_data: Dict):
         """Render gradient analysis section."""
@@ -330,7 +361,15 @@ class RouteAnalysis:
                 'max_elevation': stats.get('max_elevation_m', 0),
                 'total_ascent': stats.get('total_elevation_gain_m', 0),
                 'total_descent': stats.get('total_elevation_loss_m', 0),
-                'climbs': stats.get('climb_analysis', {}).get('climbs', [])
+                'climbs': stats.get('climb_analysis', {}).get('climbs', []),
+                'data_quality': stats.get('elevation_data_quality', {
+                    'has_elevation_data': False,
+                    'points_with_elevation': 0,
+                    'total_points': stats.get('total_points', 0),
+                    'elevation_data_percentage': 0,
+                    'elevation_range_m': 0,
+                    'has_elevation_variation': False
+                })
             }
         
         # Create gradient_analysis data structure from stats  
