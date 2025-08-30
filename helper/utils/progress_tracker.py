@@ -108,8 +108,8 @@ class ProgressTracker:
         self._update_display()
     
     def _update_display(self):
-        """Update the progress display."""
-        if not self.progress_bar or not self.status_text:
+        """Update the progress display with simplified status."""
+        if not self.progress_bar:
             return
         
         # Calculate overall progress
@@ -138,51 +138,27 @@ class ProgressTracker:
                 # Progress bar might have been cleared, skip update
                 pass
         
-        # Generate status message
-        running_step = next((step for step in self.steps if step['status'] == 'running'), None)
+        # Simplified status message - just show basic progress
         completed_count = sum(1 for step in self.steps if step['status'] == 'completed')
         failed_count = sum(1 for step in self.steps if step['status'] == 'failed')
         
-        if running_step:
-            elapsed = time.time() - running_step['start_time']
-            status_msg = f"**{self.title}** - {running_step['description']} ({elapsed:.1f}s)"
-        elif failed_count > 0:
-            status_msg = f"**{self.title}** - ❌ {failed_count} step(s) failed"
+        if failed_count > 0:
+            status_msg = f"**{self.title}** - ❌ Error occurred"
         elif completed_count == len(self.steps):
-            total_time = time.time() - self.start_time if self.start_time else 0
-            status_msg = f"**{self.title}** - ✅ Completed in {total_time:.1f}s"
+            status_msg = f"**{self.title}** - ✅ Completed"
         else:
-            status_msg = f"**{self.title}** - {completed_count}/{len(self.steps)} steps completed"
+            status_msg = f"**{self.title}** - Processing... ({int(progress * 100)}%)"
         
-        # Show step-by-step status - only show completed and current running step
-        step_status = []
-        for i, step in enumerate(self.steps):
-            if step['status'] == 'completed':
-                icon = "✅"
-                step_status.append(f"{icon} {step['description']}")
-            elif step['status'] == 'running':
-                icon = "🔄"
-                step_status.append(f"{icon} {step['description']}")
-                # Don't show pending steps after the current running step
-                break
-            elif step['status'] == 'failed':
-                icon = "❌"
-                step_status.append(f"{icon} {step['description']}")
-                # Don't show pending steps after a failed step
-                break
-            # Don't add pending steps to the display list - they'll appear when started
-        
-        # Update status display (check if still exists)
+        # Update status display with simplified message (no step details)
         if self.status_text:
             try:
-                status_display = f"{status_msg}\n\n" + "\n".join(step_status)
-                self.status_text.markdown(status_display)
+                self.status_text.markdown(status_msg)
             except:
                 # Status text might have been cleared, skip update
                 pass
     
     def finish(self):
-        """Clean up progress tracking."""
+        """Clean up progress tracking with simplified completion message."""
         total_time = time.time() - self.start_time if self.start_time else 0
         failed_steps = [step for step in self.steps if step['status'] == 'failed']
         
@@ -194,28 +170,25 @@ class ProgressTracker:
                 # Progress bar might have been cleared already
                 pass
         
-        # Show final status message
+        # Show simplified final status message
         if failed_steps:
             if self.status_text:
                 try:
-                    self.status_text.error(f"❌ Process completed with {len(failed_steps)} error(s) in {total_time:.1f}s")
+                    self.status_text.error(f"❌ {self.title} completed with errors ({total_time:.1f}s)")
                 except:
-                    # Status text might have been cleared already
                     pass
         else:
             if self.status_text:
                 try:
-                    self.status_text.success(f"✅ {self.title} completed successfully in {total_time:.1f}s")
+                    self.status_text.success(f"✅ {self.title} completed successfully ({total_time:.1f}s)")
                 except:
-                    # Status text might have been cleared already
                     pass
         
-        # Clear only the progress bar to prevent accumulation, but keep the final status message
+        # Clear the progress bar to prevent accumulation
         if self.progress_bar:
             try:
                 self.progress_bar.empty()
             except:
-                # Progress bar might have been cleared already
                 pass
             finally:
                 self.progress_bar = None
