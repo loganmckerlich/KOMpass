@@ -1216,6 +1216,19 @@ class RouteProcessor:
                     'segments': [track_points]
                 }]
             
+            # Extract flattened coordinates array for UI components (especially map display)
+            # This mirrors the logic from parse_gpx_file to ensure consistency
+            coordinates = []
+            # Add all track segment points
+            for track in converted_route_data['tracks']:
+                for segment in track['segments']:
+                    coordinates.extend(segment)
+            # Add all route points
+            for route in converted_route_data['routes']:
+                coordinates.extend(route.get('points', []))
+            
+            converted_route_data['coordinates'] = coordinates
+            
             # Calculate statistics using the converted structure
             route_data_hash = hashlib.md5(str(converted_route_data).encode()).hexdigest()
             stats = self.calculate_route_statistics(
