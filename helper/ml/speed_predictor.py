@@ -39,23 +39,40 @@ class SpeedPredictor:
         
         try:
             # Try to load existing models
-            model_files = self.storage_manager.list_global_data('models')
+            # For models, user_id should be None (global data)
+            try:
+                model_files = self.storage_manager.list_user_data(None, 'models')
+            except Exception:
+                # Fallback to checking local directory directly
+                import os
+                models_dir = os.path.join(self.storage_manager.local_data_dir, 'models')
+                if os.path.exists(models_dir):
+                    model_files = [f for f in os.listdir(models_dir) if f.endswith('.joblib')]
+                else:
+                    model_files = []
             
             for model_file in model_files:
-                if model_file.endswith('.joblib'):
-                    effort_level = model_file.replace('.joblib', '').replace('speed_model_', '')
+                if isinstance(model_file, str) and model_file.endswith('.joblib'):
+                    filename = model_file
+                elif isinstance(model_file, dict):
+                    filename = model_file.get('filename', '')
+                else:
+                    continue
+                
+                if filename.endswith('.joblib') and 'speed_model_' in filename:
+                    effort_level = filename.replace('.joblib', '').replace('speed_model_', '')
                     
                     try:
-                        model_data = self.storage_manager.load_global_data('models', model_file)
+                        model_data = self.storage_manager.load_data(None, 'models', filename)
                         if model_data:
                             self.models[effort_level] = model_data
                             logger.info(f"Loaded model for effort level: {effort_level}")
                     except Exception as e:
-                        logger.warning(f"Failed to load model {model_file}: {e}")
+                        logger.warning(f"Failed to load model {filename}: {e}")
             
             # Load model metadata if available
             try:
-                metadata = self.storage_manager.load_global_data('models', 'model_metadata.json')
+                metadata = self.storage_manager.load_data(None, 'models', 'model_metadata.json')
                 if metadata:
                     self.model_metadata = metadata
                     logger.info("Loaded model metadata")

@@ -346,11 +346,11 @@ class ModelTrainer:
         try:
             # Save model
             model_filename = f"speed_model_{effort_level}.joblib"
-            self.storage_manager.save_global_data(model, 'models', model_filename)
+            self.storage_manager.save_data(model, None, 'models', model_filename)
             
             # Save scaler
             scaler_filename = f"scaler_{effort_level}.joblib"
-            self.storage_manager.save_global_data(scaler, 'models', scaler_filename)
+            self.storage_manager.save_data(scaler, None, 'models', scaler_filename)
             
             logger.info(f"Saved model and scaler for {effort_level}")
             
@@ -372,7 +372,7 @@ class ModelTrainer:
                         'confidence': min(0.9, max(0.4, training_results['metrics'][effort_level].get('r2_score', 0.5)))
                     }
             
-            self.storage_manager.save_global_data(metadata, 'models', 'model_metadata.json')
+            self.storage_manager.save_data(metadata, None, 'models', 'model_metadata.json')
             logger.info("Saved training metadata")
             
         except Exception as e:
@@ -381,7 +381,7 @@ class ModelTrainer:
     def get_training_status(self) -> Dict[str, Any]:
         """Get current training status and model information."""
         try:
-            metadata = self.storage_manager.load_global_data('models', 'model_metadata.json')
+            metadata = self.storage_manager.load_data(None, 'models', 'model_metadata.json')
             if metadata:
                 return metadata
         except:
