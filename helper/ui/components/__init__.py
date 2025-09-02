@@ -17,6 +17,7 @@ from .header_layout import HeaderAndLayout
 from .home_page import HomePage
 from .route_upload import RouteUpload
 from .route_analysis import RouteAnalysis
+from .ml_page import MLPage
 from ...config.logging_config import get_logger
 
 
@@ -35,6 +36,7 @@ class UIComponents:
         self.home_page = HomePage()
         self.route_upload = RouteUpload()
         self.route_analysis = RouteAnalysis()
+        self.ml_page = MLPage()
     
     def render_app_header(self):
         """Render application header."""
@@ -55,6 +57,10 @@ class UIComponents:
     def render_route_upload_page(self):
         """Render route upload page."""
         return self.route_upload.render_route_upload_page()
+    
+    def render_ml_page(self):
+        """Render ML page."""
+        return self.ml_page.render_ml_page()
     
     def render_route_analysis(self, route_data: Dict, stats: Dict, filename: str):
         """Render route analysis."""
@@ -79,6 +85,10 @@ class UIComponents:
         # Route analysis methods
         if hasattr(self.route_analysis, name):
             return getattr(self.route_analysis, name)
+        
+        # ML page methods
+        if hasattr(self.ml_page, name):
+            return getattr(self.ml_page, name)
         
         # If method not found, raise AttributeError
         raise AttributeError(f"'{type(self).__name__}' object has no attribute '{name}'")

@@ -17,7 +17,8 @@ from ...processing.route_processor import RouteProcessor
 from ...processing.weather_analyzer import WeatherAnalyzer
 from ...config.config import get_config
 from ...config.logging_config import get_logger, log_function_entry, log_function_exit
-from ...utils.units import UnitConverter
+from ...ml.model_manager import ModelManager
+from ...auth.auth_manager import get_auth_manager
 
 
 logger = get_logger(__name__)
@@ -32,6 +33,8 @@ class RouteAnalysis:
         self.route_processor = RouteProcessor(data_dir=self.config.app.data_directory)
         self.weather_analyzer = WeatherAnalyzer()
         self.unit_converter = UnitConverter()
+        self.model_manager = ModelManager()
+        self.auth_manager = get_auth_manager()
     
     def render_route_analysis(self, route_data: Dict, stats: Dict, filename: str):
         """
@@ -55,13 +58,16 @@ class RouteAnalysis:
         st.markdown(f"# 📊 Route Analysis: {filename}")
         
         # Main analysis tabs
-        overview_tab, details_tab, map_tab = st.tabs(["📋 Overview", "📈 Detailed Analysis", "🗺️ Interactive Map"])
+        overview_tab, details_tab, ml_tab, map_tab = st.tabs(["📋 Overview", "📈 Detailed Analysis", "🤖 ML Predictions", "🗺️ Interactive Map"])
         
         with overview_tab:
             self._render_route_overview(comprehensive_data, stats)
         
         with details_tab:
             self._render_detailed_analysis(comprehensive_data, stats)
+        
+        with ml_tab:
+            self._render_ml_predictions(comprehensive_data, stats, filename)
         
         with map_tab:
             self._render_interactive_map(route_data, stats)
@@ -421,3 +427,145 @@ class RouteAnalysis:
             return "Rolling"
         else:
             return "Flat"
+    
+    def _render_ml_predictions(self, route_data: Dict, stats: Dict, filename: str):
+        """Render ML-based speed predictions for the route."""
+        st.markdown("## 🤖 AI Speed Predictions")
+        st.markdown("Get personalized speed predictions for this route based on your fitness profile.")
+        
+        # Check authentication
+        if not self.auth_manager.is_authenticated():
+            st.info("🔒 Please log in with Strava to get personalized speed predictions.")
+            self._render_demo_predictions(route_data, stats)
+            return
+        
+        # Get rider data
+        rider_data = st.session_state.get("rider_fitness_data")
+        if not rider_data:
+            st.warning("⚠️ No rider fitness data available. Please ensure your Strava data has been loaded.")
+            self._render_demo_predictions(route_data, stats)
+            return
+        
+        # Generate predictions
+        try:
+            with st.spinner("Generating AI predictions..."):
+                predictions = self.model_manager.predict_route_speed(rider_data, route_data)
+            
+            if 'error' in predictions:
+                st.error(f"Prediction failed: {predictions['error']}")
+                return
+            
+            # Display predictions
+            self._display_route_predictions(predictions, route_data, stats)
+            
+        except Exception as e:
+            logger.error(f"Error generating ML predictions: {e}")
+            st.error("Failed to generate predictions. Please try again.")
+    
+    def _render_demo_predictions(self, route_data: Dict, stats: Dict):
+        """Render demo predictions for unauthenticated users."""
+        st.markdown("### 🎮 Demo Predictions")
+        st.markdown("Sample predictions for a typical rider (FTP: 220W, Weight: 70kg)")
+        
+        # Create demo rider data
+        demo_rider = {
+            'performance_features': {'estimated_ftp': 220, 'weighted_power_avg': 200},
+            'basic_features': {'weight_kg': 70},
+            'training_features': {'hours_per_week': 6},
+            'composite_scores': {'overall_fitness_score': 65}
+        }
+        
+        try:
+            predictions = self.model_manager.predict_route_speed(demo_rider, route_data)
+            self._display_route_predictions(predictions, route_data, stats, is_demo=True)
+        except Exception as e:
+            logger.error(f"Error generating demo predictions: {e}")
+            st.error("Demo predictions unavailable.")
+    
+    def _display_route_predictions(self, predictions: Dict, route_data: Dict, stats: Dict, is_demo: bool = False):
+        """Display speed predictions with route context."""
+        
+        # Route summary metrics
+        st.markdown("### 📊 Route Summary")
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            distance = stats.get('distance_km', 0)
+            st.metric("Distance", f"{distance:.1f} km")
+        
+        with col2:
+            elevation = stats.get('total_elevation_gain', 0)
+            st.metric("Elevation Gain", f"{elevation:.0f} m")
+        
+        with col3:
+            avg_gradient = route_data.get('gradient_analysis', {}).get('average_gradient', 0)
+            st.metric("Avg Gradient", f"{avg_gradient:.1f}%")
+        
+        with col4:
+            terrain = self._get_simple_terrain_type(route_data.get('gradient_analysis', {}))
+            st.metric("Terrain Type", terrain)
+        
+        # Speed predictions
+        st.markdown("### 🎯 Speed & Time Predictions")
+        
+        prediction_data = []
+        for effort_level, prediction in predictions.items():
+            if effort_level.startswith('_'):  # Skip metadata
+                continue
+            
+            speed = prediction.get('speed_kmh', 0)
+            confidence = prediction.get('confidence', 0)
+            method = prediction.get('method', 'unknown')
+            
+            # Calculate time
+            time_hours = distance / speed if speed > 0 else 0
+            time_str = f"{int(time_hours)}:{int((time_hours % 1) * 60):02d}"
+            
+            # Calculate power estimate (rough)
+            ftp_estimate = 220 if is_demo else 200  # Default estimates
+            if effort_level == 'zone2':
+                power_estimate = int(ftp_estimate * 0.75)
+                effort_name = "Zone 2 (Endurance)"
+                effort_desc = "Sustainable aerobic pace"
+            elif effort_level == 'threshold':
+                power_estimate = int(ftp_estimate * 1.0)
+                effort_name = "Threshold"
+                effort_desc = "Hard sustainable effort"
+            else:
+                power_estimate = int(ftp_estimate * 0.85)
+                effort_name = effort_level.title()
+                effort_desc = "Moderate effort"
+            
+            prediction_data.append({
+                'Effort Level': effort_name,
+                'Description': effort_desc,
+                'Speed': f"{speed:.1f} km/h",
+                'Time': time_str,
+                'Est. Power': f"{power_estimate}W",
+                'Confidence': f"{confidence:.0%}"
+            })
+        
+        if prediction_data:
+            import pandas as pd
+            pred_df = pd.DataFrame(prediction_data)
+            st.dataframe(pred_df, use_container_width=True)
+        
+        # Additional insights
+        st.markdown("### 💡 Insights")
+        
+        metadata = predictions.get('_metadata', {})
+        if metadata.get('model_info', {}).get('has_ml_models', False):
+            st.success("✅ Predictions based on trained AI models using your ride history")
+        else:
+            st.info("ℹ️ Predictions based on physics calculations (train AI models for better accuracy)")
+        
+        # Training recommendation
+        if not is_demo and not metadata.get('model_info', {}).get('has_ml_models', False):
+            st.markdown("### 🚀 Improve Predictions")
+            st.info("Train personalized AI models using your ride history for more accurate predictions!")
+            if st.button("🤖 Go to ML Training", key="ml_training_route"):
+                st.session_state['selected_page_index'] = 2  # ML Predictions page
+                st.rerun()
+        
+        if is_demo:
+            st.info("🎮 This is a demo prediction. Log in with Strava for personalized predictions based on your actual fitness data.")

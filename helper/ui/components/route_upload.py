@@ -18,6 +18,7 @@ from ...processing.route_processor import RouteProcessor
 from ...auth.auth_manager import get_auth_manager
 from ...config.config import get_config
 from ...config.logging_config import get_logger, log_function_entry, log_function_exit
+from ...ml.model_manager import ModelManager
 
 
 logger = get_logger(__name__)
@@ -31,6 +32,7 @@ class RouteUpload:
         self.config = get_config()
         self.auth_manager = get_auth_manager()
         self.route_processor = RouteProcessor(data_dir=self.config.app.data_directory)
+        self.model_manager = ModelManager()
     
     def render_route_upload_page(self):
         """Render the route upload page with file upload and Strava options."""
@@ -400,4 +402,59 @@ class RouteUpload:
         route_analyzer = RouteAnalysis()
         route_analyzer.render_route_analysis(actual_route_data, stats, filename)
         
+        # Add ML training suggestion after route analysis
+        self._render_ml_training_suggestion()
+        
         log_function_exit(logger, "render_route_analysis_results")
+    
+    def _render_ml_training_suggestion(self):
+        """Render ML training suggestion after route analysis."""
+        try:
+            # Only show for authenticated users
+            if not self.auth_manager.is_authenticated():
+                return
+            
+            # Check if user has rider data
+            rider_data = st.session_state.get("rider_fitness_data")
+            if not rider_data:
+                return
+            
+            # Get user ID for training assessment
+            athlete_info = st.session_state.get("athlete_info", {})
+            user_id = str(athlete_info.get("id", "unknown"))
+            
+            if user_id == "unknown":
+                return
+            
+            # Check training need
+            training_need = self.model_manager.check_training_need(user_id)
+            
+            if training_need.get('needs_training', False) and not training_need.get('training_in_progress', False):
+                st.markdown("---")
+                st.markdown("## 🤖 Improve Your Predictions")
+                
+                col1, col2 = st.columns([2, 1])
+                
+                with col1:
+                    st.info("💡 **Get more accurate speed predictions!** Train personalized AI models using your ride history.")
+                    
+                    reasons = training_need.get('reasons', [])
+                    if reasons:
+                        st.write("**Why training is recommended:**")
+                        for reason in reasons[:3]:  # Show max 3 reasons
+                            st.write(f"• {reason}")
+                
+                with col2:
+                    if st.button("🚀 Train AI Models", type="primary", key="train_from_upload"):
+                        # Navigate to ML page
+                        st.session_state['selected_page_index'] = 2  # ML Predictions page
+                        st.rerun()
+                    
+                    st.write(f"📊 **Your Data:**")
+                    data_count = training_need.get('user_data_count', {})
+                    st.write(f"• {data_count.get('route_files', 0)} routes")
+                    st.write(f"• {data_count.get('fitness_files', 0)} fitness records")
+        
+        except Exception as e:
+            logger.warning(f"Error rendering ML training suggestion: {e}")
+            # Silently fail to avoid disrupting the main route analysis
