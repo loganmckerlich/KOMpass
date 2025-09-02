@@ -23,7 +23,27 @@ share/python-wheels/
 *.egg
 MANIFEST
 
+
 # Environment variables
+# PyInstaller
+*.manifest
+*.spec
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+
+# Environments
 .env
 .venv
 env/
@@ -66,4 +86,5 @@ test_cache_performance.py
 
 # Backup files
 main_old.py
+
 
