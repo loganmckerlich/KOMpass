@@ -191,15 +191,21 @@ class RouteAnalysis:
         col5, col6, col7, col8 = st.columns(4)
         
         with col5:
-            estimated_time = stats.get('estimated_time_minutes', 0)
-            hours = int(estimated_time // 60)
-            minutes = int(estimated_time % 60)
-            st.metric("⏱️ Est. Time", f"{hours:02d}:{minutes:02d}")
+            if self.config.app.enable_speed_estimation:
+                estimated_time = stats.get('estimated_time_minutes', 0)
+                hours = int(estimated_time // 60)
+                minutes = int(estimated_time % 60)
+                st.metric("⏱️ Est. Time", f"{hours:02d}:{minutes:02d}")
+            else:
+                st.metric("⏱️ Time Estimation", "Disabled")
         
         with col6:
-            avg_speed = stats.get('estimated_average_speed', 0)
-            speed_formatted = UnitConverter.format_speed(avg_speed, use_imperial)
-            st.metric("🚀 Est. Speed", speed_formatted)
+            if self.config.app.enable_speed_estimation:
+                avg_speed = stats.get('estimated_average_speed', 0)
+                speed_formatted = UnitConverter.format_speed(avg_speed, use_imperial)
+                st.metric("🚀 Est. Speed", speed_formatted)
+            else:
+                st.metric("🚀 Speed Estimation", "Disabled")
         
         with col7:
             difficulty = stats.get('difficulty_rating', 'Unknown')
@@ -332,6 +338,12 @@ class RouteAnalysis:
     
     def _render_performance_analysis(self, performance_data: Dict):
         """Render performance predictions and estimates."""
+        if not self.config.app.enable_speed_estimation:
+            st.markdown("### 🚀 Performance Analysis")
+            st.info("⚠️ Performance estimates (speed/time) are disabled to maintain assumption-free route analysis.")
+            st.info("📊 Enable speed estimation via environment variable `ENABLE_SPEED_ESTIMATION=true` if needed.")
+            return
+            
         st.markdown("### 🚀 Performance Analysis")
         
         col1, col2 = st.columns(2)

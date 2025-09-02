@@ -1567,12 +1567,12 @@ class RouteProcessor:
             power_analysis = stats.get('power_analysis', {})
             traffic_analysis = stats.get('traffic_analysis', {})
             
-            # Calculate basic time and speed estimates
+            # Calculate basic time and speed estimates (only if enabled)
             distance_km = stats.get('total_distance_km', 0)
             elevation_gain_m = stats.get('total_elevation_gain_m', 0)
             
-            # Simple speed estimation based on terrain
-            if distance_km > 0:
+            # Simple speed estimation based on terrain (disabled by default for assumption-free analysis)
+            if _self.config.app.enable_speed_estimation and distance_km > 0:
                 # Base speed: 25 km/h on flat terrain
                 base_speed = 25.0
                 
