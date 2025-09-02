@@ -19,6 +19,7 @@ from ...config.config import get_config
 from ...config.logging_config import get_logger, log_function_entry, log_function_exit
 from ...ml.model_manager import ModelManager
 from ...auth.auth_manager import get_auth_manager
+from ...utils.units import UnitConverter
 
 
 logger = get_logger(__name__)
