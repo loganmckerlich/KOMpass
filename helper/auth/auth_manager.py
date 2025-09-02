@@ -6,6 +6,7 @@ Handles OAuth flow, token management, and user session state.
 import os
 import streamlit as st
 from typing import Dict, Optional, Any
+from datetime import datetime
 from .strava_oauth import StravaOAuth
 from ..config.config import get_config
 from ..config.logging_config import get_logger, log_function_entry, log_function_exit, log_error
@@ -180,6 +181,9 @@ class AuthenticationManager:
             athlete_name = f"{athlete_info.get('firstname', '')} {athlete_info.get('lastname', '')}".strip()
             logger.info(f"Fetched athlete info for: {athlete_name or 'Unknown Athlete'}")
             
+            # Get user ID for data operations
+            user_id = self._get_user_id(athlete_info)
+            
             # Fetch comprehensive rider fitness data (new functionality)
             if self.rider_data_processor:
                 logger.info("Fetching comprehensive rider fitness data")
@@ -191,6 +195,10 @@ class AuthenticationManager:
                         essential_metrics = self._extract_essential_fitness_metrics(rider_data)
                         st.session_state["rider_fitness_data"] = essential_metrics
                         logger.info("Successfully fetched and cached essential rider fitness data")
+                        
+                        # Add recent Strava activities to training data (NEW FUNCTIONALITY)
+                        self._add_activities_to_training_data(user_id, access_token, rider_data)
+                        
                     else:
                         st.session_state["rider_fitness_data"] = None
                         
@@ -341,6 +349,144 @@ class AuthenticationManager:
             essential_metrics = {'summary': {'error': 'Data extraction failed'}}
             
         return essential_metrics
+    
+    def _get_user_id(self, athlete_info: Dict[str, Any]) -> str:
+        """
+        Get consistent user ID from athlete info.
+        
+        Args:
+            athlete_info: Strava athlete information
+            
+        Returns:
+            User ID string
+        """
+        return str(athlete_info.get('id', 'unknown'))
+    
+    def _add_activities_to_training_data(self, user_id: str, access_token: str, rider_data: Dict[str, Any]):
+        """
+        Add recent Strava activities to training data.
+        
+        Args:
+            user_id: User identifier
+            access_token: Strava access token
+            rider_data: Comprehensive rider fitness data
+        """
+        try:
+            # Import ModelTrainer here to avoid circular imports
+            from ..ml.model_trainer import ModelTrainer
+            
+            logger.info("Adding recent Strava activities to training data")
+            
+            # Extract rider features from rider data
+            rider_features = self._extract_rider_features_for_training(rider_data)
+            
+            # Initialize model trainer
+            model_trainer = ModelTrainer()
+            
+            # Add activities to training data (limit to 30 most recent)
+            results = model_trainer.add_strava_activities_to_training_data(
+                user_id=user_id,
+                access_token=access_token,
+                rider_features=rider_features,
+                limit=30
+            )
+            
+            # Log results
+            if results['processed'] > 0:
+                logger.info(f"Successfully added {results['processed']} activities to training data")
+                
+                # Store summary in session state for UI feedback
+                st.session_state['training_data_update'] = {
+                    'processed': results['processed'],
+                    'skipped_duplicates': results['skipped_duplicates'],
+                    'errors': results['errors'],
+                    'timestamp': datetime.now().isoformat()
+                }
+            else:
+                logger.info("No new activities added to training data (may be duplicates or errors)")
+            
+            if results['errors'] > 0:
+                logger.warning(f"Encountered {results['errors']} errors while processing activities")
+                for error_msg in results['error_messages']:
+                    logger.warning(f"Activity processing error: {error_msg}")
+                    
+        except Exception as e:
+            log_error(logger, e, "Failed to add activities to training data")
+            # Don't fail authentication if training data update fails
+    
+    def _extract_rider_features_for_training(self, rider_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Extract rider features suitable for training data from comprehensive rider data.
+        
+        Args:
+            rider_data: Comprehensive rider fitness data
+            
+        Returns:
+            Dictionary of rider features for ML training
+        """
+        features = {
+            'ftp': 200,
+            'weight_kg': 70,
+            'experience_years': 1,
+            'recent_avg_power': 180,
+            'training_hours_per_week': 5,
+            'overall_fitness_score': 50
+        }
+        
+        try:
+            # Extract from basic athlete info
+            basic_info = rider_data.get('basic_info', {})
+            if basic_info:
+                # Weight conversion from grams to kg
+                weight_g = basic_info.get('weight')
+                if weight_g and weight_g > 0:
+                    features['weight_kg'] = weight_g / 1000
+                
+                # Calculate experience from account creation date
+                created_at = basic_info.get('created_at')
+                if created_at:
+                    try:
+                        from datetime import datetime
+                        created_date = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
+                        experience_years = (datetime.now() - created_date.replace(tzinfo=None)).days / 365.25
+                        features['experience_years'] = max(0.1, experience_years)
+                    except:
+                        pass
+            
+            # Extract from power analysis
+            power_analysis = rider_data.get('power_analysis', {})
+            if power_analysis:
+                recent_power = power_analysis.get('recent_power_metrics', {})
+                if recent_power:
+                    avg_power = recent_power.get('avg_power_last_30_days')
+                    if avg_power and avg_power > 0:
+                        features['recent_avg_power'] = avg_power
+                        # Estimate FTP as 95% of recent average power (rough approximation)
+                        features['ftp'] = int(avg_power * 0.95)
+            
+            # Extract from fitness metrics
+            fitness_metrics = rider_data.get('fitness_metrics', {})
+            if fitness_metrics:
+                training_freq = fitness_metrics.get('training_frequency', {})
+                if training_freq:
+                    hours_per_week = training_freq.get('hours_per_week')
+                    if hours_per_week and hours_per_week > 0:
+                        features['training_hours_per_week'] = hours_per_week
+            
+            # Extract from training load
+            training_load = rider_data.get('training_load', {})
+            if training_load:
+                fitness_score = training_load.get('fitness_score')
+                if fitness_score and fitness_score > 0:
+                    features['overall_fitness_score'] = fitness_score
+                    
+            logger.debug(f"Extracted rider features for training: FTP={features['ftp']}, Weight={features['weight_kg']}kg")
+            
+        except Exception as e:
+            logger.warning(f"Error extracting rider features for training: {e}")
+            # Return default values if extraction fails
+        
+        return features
 
     def logout(self):
         """Clear authentication state and log out user."""
