@@ -62,16 +62,18 @@ class ModelTrainer:
             # Load user's fitness data history
             fitness_history = self.storage_manager.list_user_data(user_id, 'fitness')
             route_history = self.storage_manager.list_user_data(user_id, 'routes')
+            activity_training_data = self.storage_manager.list_user_data(user_id, 'training_data')
             
-            logger.info(f"Found {len(fitness_history)} fitness records and {len(route_history)} routes for user {user_id}")
+            logger.info(f"Found {len(fitness_history)} fitness records, {len(route_history)} routes, "
+                       f"and {len(activity_training_data)} activity training samples for user {user_id}")
             
             # Process fitness data for rider features
             rider_features = self._extract_rider_features_from_history(user_id, fitness_history)
             
-            # Process route data for route features and actual performance
+            # Process route data for route features and actual performance (existing functionality)
             for route_file in route_history[:50]:  # Limit to recent 50 routes for performance
                 try:
-                    route_data = self.storage_manager.load_user_data(user_id, 'routes', route_file)
+                    route_data = self.storage_manager.load_user_data(user_id, 'routes', route_file.get('filename'))
                     if route_data and 'analysis' in route_data:
                         # Extract features and actual performance
                         sample = self._create_training_sample(rider_features, route_data)
@@ -86,7 +88,29 @@ class ModelTrainer:
                 except Exception as e:
                     logger.warning(f"Failed to process route {route_file}: {e}")
             
-            logger.info(f"Collected {len(training_data['features'])} training samples")
+            # Process activity-based training data (NEW FUNCTIONALITY)
+            for activity_file in activity_training_data:
+                try:
+                    filename = activity_file.get('filename')
+                    if filename and filename.startswith('activity_') and filename.endswith('_training.json'):
+                        activity_sample = self.storage_manager.load_user_data(user_id, 'training_data', filename)
+                        if activity_sample and 'features' in activity_sample:
+                            training_data['features'].append(activity_sample['features'])
+                            
+                            # Add actual speed as target for 'actual' effort level
+                            targets = activity_sample.get('targets', {})
+                            for target_type, value in targets.items():
+                                if target_type not in training_data['targets']:
+                                    training_data['targets'][target_type] = []
+                                training_data['targets'][target_type].append(value)
+                            
+                            training_data['metadata'].append(activity_sample.get('metadata', {}))
+                            
+                except Exception as e:
+                    logger.warning(f"Failed to process activity training data {activity_file}: {e}")
+            
+            logger.info(f"Collected {len(training_data['features'])} training samples "
+                       f"({len(route_history)} from routes, {len(activity_training_data)} from activities)")
             
         except Exception as e:
             logger.error(f"Error collecting training data: {e}")
@@ -607,6 +631,67 @@ class ModelTrainer:
         except Exception as e:
             logger.error(f"Error storing training sample for activity {activity_id}: {e}")
             return False
+
+    def get_training_data_stats(self, user_id: str) -> Dict[str, Any]:
+        """
+        Get statistics about user's training data.
+        
+        Args:
+            user_id: User identifier
+            
+        Returns:
+            Dictionary with training data statistics
+        """
+        log_function_entry(logger, "get_training_data_stats")
+        
+        stats = {
+            'total_samples': 0,
+            'route_samples': 0,
+            'activity_samples': 0,
+            'last_updated': None,
+            'activity_ids': []
+        }
+        
+        try:
+            # Count route-based samples
+            route_history = self.storage_manager.list_user_data(user_id, 'routes')
+            stats['route_samples'] = len(route_history)
+            
+            # Count activity-based samples
+            activity_training_data = self.storage_manager.list_user_data(user_id, 'training_data')
+            activity_samples = []
+            
+            for file_info in activity_training_data:
+                filename = file_info.get('filename', '')
+                if filename.startswith('activity_') and filename.endswith('_training.json'):
+                    activity_samples.append(file_info)
+                    # Extract activity ID from filename
+                    try:
+                        activity_id = filename.replace('activity_', '').replace('_training.json', '')
+                        stats['activity_ids'].append(activity_id)
+                    except:
+                        pass
+            
+            stats['activity_samples'] = len(activity_samples)
+            stats['total_samples'] = stats['route_samples'] + stats['activity_samples']
+            
+            # Get last updated timestamp
+            if activity_samples:
+                # Sort by last modified and get the most recent
+                sorted_samples = sorted(activity_samples, 
+                                       key=lambda x: x.get('last_modified', ''), 
+                                       reverse=True)
+                if sorted_samples:
+                    stats['last_updated'] = sorted_samples[0].get('last_modified')
+            
+            logger.info(f"Training data stats for user {user_id}: {stats['total_samples']} total samples "
+                       f"({stats['route_samples']} routes, {stats['activity_samples']} activities)")
+            
+        except Exception as e:
+            logger.error(f"Error getting training data stats: {e}")
+        
+        log_function_exit(logger, "get_training_data_stats")
+        return stats
 
     def get_training_status(self) -> Dict[str, Any]:
         """Get current training status and model information."""

@@ -570,6 +570,25 @@ class AuthenticationManager:
             athlete_name = f"{athlete_info.get('firstname', '')} {athlete_info.get('lastname', '')}".strip()
             st.success(f"✅ Connected as **{athlete_name or 'Unknown Athlete'}**")
             
+            # Show training data update status if available
+            training_update = st.session_state.get('training_data_update')
+            if training_update:
+                processed = training_update.get('processed', 0)
+                skipped = training_update.get('skipped_duplicates', 0)
+                errors = training_update.get('errors', 0)
+                
+                if processed > 0:
+                    st.info(f"🎯 **Training Data Updated:** Added {processed} new rides to training data. "
+                           f"Skipped {skipped} duplicates." + 
+                           (f" {errors} errors occurred." if errors > 0 else ""))
+                elif skipped > 0:
+                    st.info(f"📊 **Training Data:** Found {skipped} rides already in training data (no duplicates added).")
+                
+                # Clear the status after showing it
+                if st.button("✅ Dismiss", key="dismiss_training_status"):
+                    del st.session_state['training_data_update']
+                    st.rerun()
+            
             # Simple logout button
             if st.button("🚪 Logout", type="secondary", use_container_width=True):
                 self.logout()
