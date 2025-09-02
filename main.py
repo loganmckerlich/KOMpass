@@ -80,7 +80,7 @@ def main():
         
         # Clean page name by removing emoji and extra spaces
         # Handle both emoji-prefixed names and plain names
-        if ' ' in selected_page_raw and selected_page_raw.startswith(('🏠', '📁', '🤖', '📊')):
+        if ' ' in selected_page_raw and selected_page_raw.startswith(('🏠', '📁', '🤖')):
             selected_page = selected_page_raw.split(' ', 1)[1]
         else:
             selected_page = selected_page_raw
@@ -96,33 +96,10 @@ def main():
         elif selected_page == "ML Predictions":
             ui_components.render_ml_page()
         
-        elif selected_page == "Dashboard":
-            # Dashboard functionality - for now, show available options
-            st.markdown("# 📊 Dashboard")
-            st.info("Dashboard functionality is under development. Available pages:")
-            col1, col2 = st.columns(2)
-            with col1:
-                if st.button("📁 Go to Route Upload", use_container_width=True):
-                    st.session_state['selected_page_index'] = 1  # Index for Route Upload
-                    st.rerun()
-            with col2:
-                if st.button("🤖 Go to ML Predictions", use_container_width=True):
-                    st.session_state['selected_page_index'] = 2  # Index for ML Predictions
-                    st.rerun()
-            
-            # Third row for additional navigation
-            col3, col4 = st.columns(2)
-            with col3:
-                if st.button("🏠 Go to Home", use_container_width=True):
-                    st.session_state['selected_page_index'] = 0  # Index for Home
-                    st.rerun()
-            with col4:
-                st.info("More features coming soon!")
-        
         else:
             logger.warning(f"Unknown page selected: {selected_page}")
             st.error(f"Unknown page: {selected_page}")
-            st.info("Available pages: Home, Route Upload, ML Predictions, Dashboard")
+            st.info("Available pages: Home, Route Upload, ML Predictions")
         
         logger.debug("Main application rendering completed")
         
