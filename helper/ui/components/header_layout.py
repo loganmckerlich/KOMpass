@@ -294,13 +294,13 @@ class HeaderAndLayout:
             
             selected_page = st.radio(
                 "Choose a page:",
-                ["🏠 Home", "📁 Route Upload", "📊 Dashboard"],
+                ["🏠 Home", "📁 Route Upload", "🤖 ML Predictions", "📊 Dashboard"],
                 index=st.session_state['selected_page_index'],
                 key="page_selector"
             )
             
             # Update session state when radio selection changes
-            page_options = ["🏠 Home", "📁 Route Upload", "📊 Dashboard"]
+            page_options = ["🏠 Home", "📁 Route Upload", "🤖 ML Predictions", "📊 Dashboard"]
             if selected_page in page_options:
                 st.session_state['selected_page_index'] = page_options.index(selected_page)
             

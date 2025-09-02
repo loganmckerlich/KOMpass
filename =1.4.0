@@ -1,0 +1,24 @@
+Defaulting to user installation because normal site-packages is not writeable
+Collecting scikit-learn
+  Downloading scikit_learn-1.7.1-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.whl.metadata
+     - 11.8 kB 59.6 MB/s 0:00:00
+Collecting joblib
+  Downloading joblib-1.5.2-py3-none-any.whl.metadata
+     - 5.6 kB ? 0:00:00
+Requirement already satisfied: numpy>=1.22.0 in /home/runner/.local/lib/python3.12/site-packages (from scikit-learn) (2.3.2)
+Collecting scipy>=1.8.0 (from scikit-learn)
+  Downloading scipy-1.16.1-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.whl.metadata
+     - 62.0 kB 206.8 MB/s 0:00:00
+Collecting threadpoolctl>=3.1.0 (from scikit-learn)
+  Downloading threadpoolctl-3.6.0-py3-none-any.whl.metadata
+     - 13.8 kB 156.2 MB/s 0:00:00
+Downloading scikit_learn-1.7.1-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.whl
+   - 9.5 MB 160.3 MB/s 0:00:00
+Downloading joblib-1.5.2-py3-none-any.whl
+   - 308.4 kB 204.0 MB/s 0:00:00
+Downloading scipy-1.16.1-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.whl
+   | 35.2 MB 226.3 MB/s 0:00:00
+Downloading threadpoolctl-3.6.0-py3-none-any.whl
+   - 18.6 kB 98.9 MB/s 0:00:00
+Installing collected packages: threadpoolctl, scipy, joblib, scikit-learn
+Successfully installed joblib-1.5.2 scikit-learn-1.7.1 scipy-1.16.1 threadpoolctl-3.6.0
