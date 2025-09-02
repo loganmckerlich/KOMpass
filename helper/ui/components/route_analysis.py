@@ -102,10 +102,6 @@ class RouteAnalysis:
         # Route complexity
         if 'complexity_analysis' in route_data:
             self._render_complexity_analysis(route_data['complexity_analysis'])
-        
-        # Performance predictions
-        if 'performance_analysis' in route_data:
-            self._render_performance_analysis(route_data['performance_analysis'])
     
     def _render_interactive_map(self, route_data: Dict, stats: Dict):
         """Render interactive map with route visualization."""
@@ -163,8 +159,8 @@ class RouteAnalysis:
         """Render key performance indicators."""
         log_function_entry(logger, "render_route_kpis")
         
-        # Check for user unit preference (default to metric for now)
-        use_imperial = st.session_state.get('use_imperial', False)
+        # Check for user unit preference (default to imperial per user request)
+        use_imperial = st.session_state.get('use_imperial', True)
         
         # Basic metrics row
         col1, col2, col3, col4 = st.columns(4)
@@ -187,45 +183,25 @@ class RouteAnalysis:
             max_gradient = stats.get('max_gradient', 0)
             st.metric("🏔️ Max Gradient", f"{max_gradient:.1f}%")
         
-        # Performance metrics row
+        # Main metrics row (4 columns)
         col5, col6, col7, col8 = st.columns(4)
         
         with col5:
-            if self.config.app.enable_speed_estimation:
-                estimated_time = stats.get('estimated_time_minutes', 0)
-                hours = int(estimated_time // 60)
-                minutes = int(estimated_time % 60)
-                st.metric("⏱️ Est. Time", f"{hours:02d}:{minutes:02d}")
-            else:
-                st.metric("⏱️ Time Estimation", "Disabled")
-        
-        with col6:
-            if self.config.app.enable_speed_estimation:
-                avg_speed = stats.get('estimated_average_speed', 0)
-                speed_formatted = UnitConverter.format_speed(avg_speed, use_imperial)
-                st.metric("🚀 Est. Speed", speed_formatted)
-            else:
-                st.metric("🚀 Speed Estimation", "Disabled")
-        
-        with col7:
             difficulty = stats.get('difficulty_rating', 'Unknown')
             st.metric("💪 Difficulty", difficulty)
         
-        with col8:
+        with col6:
             complexity = stats.get('route_complexity_score', 0)
             st.metric("🌀 Complexity", f"{complexity:.1f}/10")
         
-        # Feature-specific metrics (based on configuration)
-        feature_col1, feature_col2 = st.columns(2)
-        
-        with feature_col1:
+        with col7:
             if self.config.app.enable_traffic_analysis:
                 traffic_points = stats.get('traffic_points', 0)
                 st.metric("🚦 Traffic Points", f"{traffic_points}")
             else:
                 st.metric("🚦 Traffic Analysis", "Disabled")
         
-        with feature_col2:
+        with col8:
             if self.config.app.enable_weather_analysis:
                 weather_score = stats.get('weather_favorability', 'Unknown')
                 st.metric("🌤️ Weather Score", weather_score)
@@ -258,8 +234,8 @@ class RouteAnalysis:
             else:
                 st.info(f"ℹ️ **Minimal elevation changes**: Route elevation varies by only {elevation_range:.1f}m")
         
-        # Check for user unit preference (default to metric for now)
-        use_imperial = st.session_state.get('use_imperial', False)
+        # Check for user unit preference (default to imperial per user request)
+        use_imperial = st.session_state.get('use_imperial', True)
         
         col1, col2 = st.columns(2)
         
@@ -335,34 +311,6 @@ class RouteAnalysis:
         
         with col3:
             st.metric("Direction Changes", direction_changes)
-    
-    def _render_performance_analysis(self, performance_data: Dict):
-        """Render performance predictions and estimates."""
-        if not self.config.app.enable_speed_estimation:
-            st.markdown("### 🚀 Performance Analysis")
-            st.info("⚠️ Performance estimates (speed/time) are disabled to maintain assumption-free route analysis.")
-            st.info("📊 Enable speed estimation via environment variable `ENABLE_SPEED_ESTIMATION=true` if needed.")
-            return
-            
-        st.markdown("### 🚀 Performance Analysis")
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.markdown("**Speed Estimates:**")
-            if 'speed_estimates' in performance_data:
-                estimates = performance_data['speed_estimates']
-                st.write(f"• Flat sections: {estimates.get('flat', 0):.1f} km/h")
-                st.write(f"• Climbing: {estimates.get('climbing', 0):.1f} km/h")
-                st.write(f"• Descending: {estimates.get('descending', 0):.1f} km/h")
-        
-        with col2:
-            st.markdown("**Power Estimates:**")
-            if 'power_estimates' in performance_data:
-                power = performance_data['power_estimates']
-                st.write(f"• Average Power: {power.get('average', 0):.0f} W")
-                st.write(f"• Normalized Power: {power.get('normalized', 0):.0f} W")
-                st.write(f"• Peak Power: {power.get('peak', 0):.0f} W")
     
     def _ensure_comprehensive_analysis(self, route_data: Dict, stats: Dict, filename: str) -> Dict:
         """Ensure all analysis components are complete."""

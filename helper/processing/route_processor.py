@@ -1567,37 +1567,11 @@ class RouteProcessor:
             power_analysis = stats.get('power_analysis', {})
             traffic_analysis = stats.get('traffic_analysis', {})
             
-            # Calculate basic time and speed estimates (only if enabled)
-            distance_km = stats.get('total_distance_km', 0)
-            elevation_gain_m = stats.get('total_elevation_gain_m', 0)
-            
-            # Simple speed estimation based on terrain (disabled by default for assumption-free analysis)
-            if _self.config.app.enable_speed_estimation and distance_km > 0:
-                # Base speed: 25 km/h on flat terrain
-                base_speed = 25.0
-                
-                # Adjust for elevation gain (slower on climbs)
-                elevation_factor = max(0.5, 1.0 - (elevation_gain_m / distance_km) * 0.01)
-                
-                # Adjust for gradient difficulty
-                avg_gradient = gradient_analysis.get('average_gradient_percent', 0)
-                gradient_factor = max(0.6, 1.0 - (avg_gradient * 0.02))
-                
-                estimated_speed = base_speed * elevation_factor * gradient_factor
-                estimated_time_minutes = (distance_km / estimated_speed) * 60
-            else:
-                estimated_speed = 0
-                estimated_time_minutes = 0
-            
             # Add UI-expected metrics at top level
             stats.update({
                 # Gradient metrics
                 'average_gradient': gradient_analysis.get('average_gradient_percent', 0),
                 'max_gradient': gradient_analysis.get('max_gradient_percent', 0),
-                
-                # Performance estimates
-                'estimated_time_minutes': round(estimated_time_minutes, 1),
-                'estimated_average_speed': round(estimated_speed, 1),
                 
                 # Difficulty and complexity
                 'difficulty_rating': _self._calculate_difficulty_rating(stats),
