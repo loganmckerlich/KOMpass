@@ -153,10 +153,9 @@ class MLPage:
                 else:
                     st.write("No previous training found")
             
-            # Training options
-            st.markdown("### Training Options")
-            async_training = st.checkbox("Run training in background", value=True, 
-                                       help="Allows you to continue using the app while training")
+            # Training information
+            st.markdown("### Training Information")
+            st.info("Training runs synchronously and will show progress in real-time.")
             
     def _render_model_info_tab(self):
         """Render model transparency and information."""
@@ -402,12 +401,26 @@ class MLPage:
     def _initiate_training(self, user_id: str):
         """Initiate model training process."""
         try:
-            with st.spinner("Initiating model training..."):
-                result = self.model_manager.initiate_model_training(user_id, async_training=True)
+            # First, collect training data to show count to user
+            with st.spinner("Checking training data..."):
+                training_data = self.model_manager.trainer.collect_training_data(user_id)
+                ride_count = len(training_data.get('features', []))
             
-            if result.get('status') == 'training_initiated':
-                st.success("🚀 Model training started! Training will continue in the background.")
-                st.info("You can continue using the app while training completes. Check back in a few minutes.")
+            # Display training data information
+            st.info(f"📊 Found **{ride_count} rides** in your training data")
+            
+            if ride_count < 10:
+                st.warning(f"⚠️ Insufficient training data. Need at least 10 rides, but only found {ride_count}.")
+                st.info("Upload more routes or ensure your Strava data is properly synced to enable training.")
+                return
+            
+            # Start synchronous training
+            with st.spinner(f"Training models using {ride_count} rides... This may take a few minutes."):
+                result = self.model_manager.initiate_model_training(user_id, async_training=False)
+            
+            if result.get('status') == 'training_completed':
+                st.success(f"🚀 Model training completed successfully using {ride_count} rides!")
+                st.info("Your personalized AI models are now ready for predictions.")
             elif result.get('status') == 'insufficient_data':
                 st.warning(f"⚠️ {result.get('message', 'Insufficient data for training')}")
                 st.info("Upload more routes or ensure your Strava data is properly synced to enable training.")
