@@ -74,8 +74,15 @@ class HeaderAndLayout:
             """, unsafe_allow_html=True)
         
         with header_col3:
-            # Settings icon placeholder for future use
-            st.markdown("##### ⚙️")
+            # Unit toggle (Imperial/Metric)
+            st.markdown("**Units:**")
+            use_imperial = st.toggle(
+                "Imperial", 
+                value=st.session_state.get('use_imperial', True),  # Default to imperial
+                key="unit_toggle",
+                help="Toggle between Imperial (miles/feet) and Metric (km/meters)"
+            )
+            st.session_state['use_imperial'] = use_imperial
     
     def _load_custom_css(self):
         """Load custom CSS for Strava-inspired styling."""
