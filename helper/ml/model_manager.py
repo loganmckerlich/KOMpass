@@ -63,6 +63,11 @@ class ModelManager:
             # Extract route features
             route_features = self._extract_route_features(route_data)
             
+            # Check if automatic training is needed
+            user_id = rider_data.get('user_id', 'anonymous')
+            if user_id != 'anonymous':
+                self._maybe_auto_train(user_id)
+            
             # Get predictions for each effort level
             predictions = {}
             for effort_level in effort_levels:
@@ -407,6 +412,47 @@ class ModelManager:
         finally:
             self._training_in_progress = False
     
+    def _maybe_auto_train(self, user_id: str):
+        """
+        Check if automatic training should be initiated and start it if needed.
+        
+        Args:
+            user_id: User identifier
+        """
+        try:
+            # Skip if training is already in progress
+            if self._training_in_progress:
+                return
+            
+            # Check if we have any trained models
+            model_info = self.predictor.get_model_info()
+            if model_info.get('has_ml_models', False):
+                # Models exist, no need for automatic training
+                return
+            
+            # Check if training is needed and data is available
+            training_need = self.check_training_need(user_id)
+            if not training_need.get('needs_training', False):
+                return
+            
+            # Check if we have sufficient data for training
+            user_data_count = training_need.get('user_data_count', {})
+            if user_data_count.get('route_files', 0) < 5:
+                logger.info(f"Auto-training skipped: insufficient route data ({user_data_count.get('route_files', 0)} routes)")
+                return
+            
+            # Initiate automatic training in background
+            logger.info(f"Auto-training initiated for user {user_id}: no ML models found and sufficient data available")
+            result = self.initiate_model_training(user_id, async_training=True)
+            
+            if result.get('status') == 'training_initiated':
+                logger.info("Automatic model training started successfully")
+            else:
+                logger.warning(f"Automatic training failed to start: {result.get('error', 'unknown error')}")
+                
+        except Exception as e:
+            logger.error(f"Error in automatic training check: {e}")
+
     def is_training_in_progress(self) -> bool:
         """Check if training is currently in progress."""
         return self._training_in_progress
