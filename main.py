@@ -72,6 +72,12 @@ def main():
         with st.sidebar:
             selected_page_raw = ui_components.render_navigation_sidebar()
         
+        # Check for navigation flags and update page selection if needed
+        if st.session_state.get('nav_to_upload', False):
+            st.session_state['selected_page_index'] = 1  # Route Upload page
+            st.session_state['nav_to_upload'] = False  # Clear the flag
+            st.rerun()
+        
         # Clean page name by removing emoji and extra spaces
         # Handle both emoji-prefixed names and plain names
         if ' ' in selected_page_raw and selected_page_raw.startswith(('🏠', '📁', '📊')):
