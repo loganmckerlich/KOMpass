@@ -395,13 +395,45 @@ class AuthenticationManager:
             if results['processed'] > 0:
                 logger.info(f"Successfully added {results['processed']} activities to training data")
                 
-                # Store summary in session state for UI feedback
-                st.session_state['training_data_update'] = {
-                    'processed': results['processed'],
-                    'skipped_duplicates': results['skipped_duplicates'],
-                    'errors': results['errors'],
-                    'timestamp': datetime.now().isoformat()
-                }
+                # Consolidate training data into one large dataset
+                try:
+                    consolidation_results = model_trainer.consolidate_training_data(user_id)
+                    if consolidation_results['success']:
+                        logger.info(f"Consolidated {consolidation_results['consolidated_samples']} training samples "
+                                   f"into {consolidation_results['filename']} ({consolidation_results['total_size_mb']:.2f}MB)")
+                        # Update session state with consolidation info
+                        st.session_state['training_data_update'] = {
+                            'processed': results['processed'],
+                            'skipped_duplicates': results['skipped_duplicates'],
+                            'errors': results['errors'],
+                            'timestamp': datetime.now().isoformat(),
+                            'consolidated': True,
+                            'consolidated_samples': consolidation_results['consolidated_samples'],
+                            'consolidated_filename': consolidation_results['filename'],
+                            'consolidated_size_mb': consolidation_results['total_size_mb']
+                        }
+                    else:
+                        logger.warning(f"Failed to consolidate training data: {consolidation_results.get('error', 'Unknown error')}")
+                        # Store summary in session state for UI feedback (without consolidation info)
+                        st.session_state['training_data_update'] = {
+                            'processed': results['processed'],
+                            'skipped_duplicates': results['skipped_duplicates'],
+                            'errors': results['errors'],
+                            'timestamp': datetime.now().isoformat(),
+                            'consolidated': False,
+                            'consolidation_error': consolidation_results.get('error')
+                        }
+                except Exception as e:
+                    logger.warning(f"Error during training data consolidation: {e}")
+                    # Store summary in session state for UI feedback (without consolidation info)
+                    st.session_state['training_data_update'] = {
+                        'processed': results['processed'],
+                        'skipped_duplicates': results['skipped_duplicates'],
+                        'errors': results['errors'],
+                        'timestamp': datetime.now().isoformat(),
+                        'consolidated': False,
+                        'consolidation_error': str(e)
+                    }
             else:
                 logger.info("No new activities added to training data (may be duplicates or errors)")
             
@@ -576,11 +608,24 @@ class AuthenticationManager:
                 processed = training_update.get('processed', 0)
                 skipped = training_update.get('skipped_duplicates', 0)
                 errors = training_update.get('errors', 0)
+                consolidated = training_update.get('consolidated', False)
                 
                 if processed > 0:
-                    st.info(f"🎯 **Training Data Updated:** Added {processed} new rides to training data. "
-                           f"Skipped {skipped} duplicates." + 
-                           (f" {errors} errors occurred." if errors > 0 else ""))
+                    base_message = f"🎯 **Training Data Updated:** Added {processed} new rides to training data. "
+                    base_message += f"Skipped {skipped} duplicates."
+                    if errors > 0:
+                        base_message += f" {errors} errors occurred."
+                    
+                    # Add consolidation info if available
+                    if consolidated:
+                        consolidated_samples = training_update.get('consolidated_samples', 0)
+                        consolidated_size = training_update.get('consolidated_size_mb', 0)
+                        consolidated_filename = training_update.get('consolidated_filename', 'dataset')
+                        base_message += f" **Consolidated {consolidated_samples} samples into large dataset** ({consolidated_size:.1f}MB)."
+                    elif 'consolidation_error' in training_update:
+                        base_message += f" ⚠️ Note: Failed to consolidate into large dataset - individual files remain available."
+                    
+                    st.info(base_message)
                 elif skipped > 0:
                     st.info(f"📊 **Training Data:** Found {skipped} rides already in training data (no duplicates added).")
                 
