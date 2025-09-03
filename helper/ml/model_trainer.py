@@ -62,16 +62,18 @@ class ModelTrainer:
             # Load user's fitness data history
             fitness_history = self.storage_manager.list_user_data(user_id, 'fitness')
             route_history = self.storage_manager.list_user_data(user_id, 'routes')
+            activity_training_data = self.storage_manager.list_user_data(user_id, 'training_data')
             
-            logger.info(f"Found {len(fitness_history)} fitness records and {len(route_history)} routes for user {user_id}")
+            logger.info(f"Found {len(fitness_history)} fitness records, {len(route_history)} routes, "
+                       f"and {len(activity_training_data)} activity training samples for user {user_id}")
             
             # Process fitness data for rider features
             rider_features = self._extract_rider_features_from_history(user_id, fitness_history)
             
-            # Process route data for route features and actual performance
+            # Process route data for route features and actual performance (existing functionality)
             for route_file in route_history[:50]:  # Limit to recent 50 routes for performance
                 try:
-                    route_data = self.storage_manager.load_user_data(user_id, 'routes', route_file)
+                    route_data = self.storage_manager.load_user_data(user_id, 'routes', route_file.get('filename'))
                     if route_data and 'analysis' in route_data:
                         # Extract features and actual performance
                         sample = self._create_training_sample(rider_features, route_data)
@@ -86,7 +88,29 @@ class ModelTrainer:
                 except Exception as e:
                     logger.warning(f"Failed to process route {route_file}: {e}")
             
-            logger.info(f"Collected {len(training_data['features'])} training samples")
+            # Process activity-based training data (NEW FUNCTIONALITY)
+            for activity_file in activity_training_data:
+                try:
+                    filename = activity_file.get('filename')
+                    if filename and filename.startswith('activity_') and filename.endswith('_training.json'):
+                        activity_sample = self.storage_manager.load_user_data(user_id, 'training_data', filename)
+                        if activity_sample and 'features' in activity_sample:
+                            training_data['features'].append(activity_sample['features'])
+                            
+                            # Add actual speed as target for 'actual' effort level
+                            targets = activity_sample.get('targets', {})
+                            for target_type, value in targets.items():
+                                if target_type not in training_data['targets']:
+                                    training_data['targets'][target_type] = []
+                                training_data['targets'][target_type].append(value)
+                            
+                            training_data['metadata'].append(activity_sample.get('metadata', {}))
+                            
+                except Exception as e:
+                    logger.warning(f"Failed to process activity training data {activity_file}: {e}")
+            
+            logger.info(f"Collected {len(training_data['features'])} training samples "
+                       f"({len(route_history)} from routes, {len(activity_training_data)} from activities)")
             
         except Exception as e:
             logger.error(f"Error collecting training data: {e}")
@@ -378,6 +402,297 @@ class ModelTrainer:
         except Exception as e:
             logger.error(f"Error saving training metadata: {e}")
     
+    def add_strava_activities_to_training_data(self, user_id: str, access_token: str, rider_features: Dict[str, Any], limit: int = 30) -> Dict[str, Any]:
+        """
+        Convert recent Strava activities to training data and store them.
+        
+        Args:
+            user_id: User identifier
+            access_token: Strava access token
+            rider_features: Rider fitness features to pair with activities
+            limit: Number of recent activities to process (default 30)
+            
+        Returns:
+            Dictionary with processing results
+        """
+        log_function_entry(logger, "add_strava_activities_to_training_data")
+        
+        results = {
+            'processed': 0,
+            'skipped_duplicates': 0,
+            'errors': 0,
+            'activity_ids': [],
+            'error_messages': []
+        }
+        
+        try:
+            # Import oauth client from auth manager
+            from ..auth.auth_manager import get_auth_manager
+            auth_manager = get_auth_manager()
+            oauth_client = auth_manager.get_oauth_client()
+            
+            if not oauth_client:
+                raise Exception("OAuth client not available")
+            
+            # Get recent activities
+            logger.info(f"Fetching recent {limit} activities for training data")
+            activities = oauth_client.get_activities(access_token, per_page=limit)
+            
+            # Filter cycling activities
+            cycling_activities = [
+                activity for activity in activities 
+                if activity.get('type') in ['Ride', 'VirtualRide', 'EBikeRide']
+            ]
+            
+            logger.info(f"Found {len(cycling_activities)} cycling activities to process")
+            
+            # Get list of already processed activity IDs to avoid duplicates
+            processed_activities = self._get_processed_activity_ids(user_id)
+            
+            # Process each activity
+            for activity in cycling_activities:
+                activity_id = activity.get('id')
+                if not activity_id:
+                    continue
+                    
+                # Skip if already processed
+                if str(activity_id) in processed_activities:
+                    results['skipped_duplicates'] += 1
+                    logger.debug(f"Skipping already processed activity {activity_id}")
+                    continue
+                
+                try:
+                    # Convert activity to training data
+                    training_sample = self._convert_activity_to_training_data(
+                        activity, access_token, oauth_client, rider_features
+                    )
+                    
+                    if training_sample:
+                        # Store training sample
+                        success = self._store_training_sample(user_id, activity_id, training_sample)
+                        if success:
+                            results['processed'] += 1
+                            results['activity_ids'].append(activity_id)
+                            logger.info(f"Added activity {activity_id} to training data")
+                        else:
+                            results['errors'] += 1
+                            results['error_messages'].append(f"Failed to store activity {activity_id}")
+                    else:
+                        results['errors'] += 1
+                        results['error_messages'].append(f"Failed to convert activity {activity_id}")
+                        
+                except Exception as e:
+                    results['errors'] += 1
+                    error_msg = f"Error processing activity {activity_id}: {str(e)}"
+                    results['error_messages'].append(error_msg)
+                    logger.warning(error_msg)
+            
+            logger.info(f"Training data collection completed: {results['processed']} processed, "
+                       f"{results['skipped_duplicates']} skipped, {results['errors']} errors")
+                       
+        except Exception as e:
+            logger.error(f"Error in add_strava_activities_to_training_data: {e}")
+            results['error_messages'].append(f"General error: {str(e)}")
+        
+        log_function_exit(logger, "add_strava_activities_to_training_data")
+        return results
+    
+    def _get_processed_activity_ids(self, user_id: str) -> set:
+        """Get set of already processed activity IDs for a user."""
+        try:
+            # Load training data metadata
+            metadata_files = self.storage_manager.list_user_data(user_id, 'training_data')
+            processed_ids = set()
+            
+            for file_info in metadata_files:
+                filename = file_info.get('filename', '')
+                if filename.startswith('activity_') and filename.endswith('.json'):
+                    # Extract activity ID from filename: activity_{id}_training.json
+                    try:
+                        activity_id = filename.replace('activity_', '').replace('_training.json', '')
+                        processed_ids.add(activity_id)
+                    except:
+                        pass
+            
+            logger.debug(f"Found {len(processed_ids)} already processed activities for user {user_id}")
+            return processed_ids
+            
+        except Exception as e:
+            logger.warning(f"Error getting processed activity IDs: {e}")
+            return set()
+    
+    def _convert_activity_to_training_data(self, activity: Dict, access_token: str, oauth_client, rider_features: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """
+        Convert a single Strava activity to training data format.
+        
+        Args:
+            activity: Strava activity data
+            access_token: Strava access token
+            oauth_client: OAuth client for API calls
+            rider_features: Rider fitness features
+            
+        Returns:
+            Training data sample or None if conversion failed
+        """
+        try:
+            activity_id = activity.get('id')
+            
+            # Get basic activity metrics
+            distance_m = activity.get('distance', 0)  # meters
+            moving_time_s = activity.get('moving_time', 0)  # seconds
+            total_elevation_gain_m = activity.get('total_elevation_gain', 0)  # meters
+            average_speed_ms = activity.get('average_speed', 0)  # m/s
+            
+            # Skip activities that are too short or lack basic data
+            if distance_m < 5000 or moving_time_s < 300:  # Less than 5km or 5 minutes
+                logger.debug(f"Skipping short activity {activity_id}: {distance_m}m, {moving_time_s}s")
+                return None
+            
+            # Convert to standard units
+            distance_km = distance_m / 1000
+            moving_time_h = moving_time_s / 3600
+            average_speed_kmh = (average_speed_ms * 3.6) if average_speed_ms > 0 else (distance_km / moving_time_h)
+            
+            # Calculate route features
+            route_features = {
+                'distance_km': distance_km,
+                'total_elevation_gain': total_elevation_gain_m,
+                'avg_gradient_percent': (total_elevation_gain_m / distance_m * 100) if distance_m > 0 else 0,
+                'moving_time_hours': moving_time_h,
+                'average_speed_kmh': average_speed_kmh
+            }
+            
+            # Combine with rider features to create training sample
+            combined_features = []
+            combined_features.extend([
+                rider_features.get('ftp', 200),
+                rider_features.get('weight_kg', 70),
+                rider_features.get('experience_years', 1),
+                rider_features.get('recent_avg_power', 180),
+                rider_features.get('training_hours_per_week', 5),
+                rider_features.get('overall_fitness_score', 50)
+            ])
+            combined_features.extend([
+                route_features['distance_km'],
+                route_features['total_elevation_gain'],
+                route_features['avg_gradient_percent'],
+                moving_time_h,
+                average_speed_kmh
+            ])
+            
+            # Create training sample
+            training_sample = {
+                'features': combined_features,
+                'targets': {
+                    'actual_speed_kmh': average_speed_kmh,
+                    'actual_time_hours': moving_time_h
+                },
+                'metadata': {
+                    'activity_id': activity_id,
+                    'activity_name': activity.get('name', f"Activity {activity_id}"),
+                    'start_date': activity.get('start_date'),
+                    'route_features': route_features,
+                    'rider_features': rider_features,
+                    'source': 'strava_activity',
+                    'created_at': datetime.now().isoformat()
+                }
+            }
+            
+            logger.debug(f"Converted activity {activity_id} to training sample: {distance_km:.1f}km, {average_speed_kmh:.1f}km/h")
+            return training_sample
+            
+        except Exception as e:
+            logger.error(f"Error converting activity {activity.get('id', 'unknown')} to training data: {e}")
+            return None
+    
+    def _store_training_sample(self, user_id: str, activity_id: int, training_sample: Dict[str, Any]) -> bool:
+        """
+        Store a training sample for a user.
+        
+        Args:
+            user_id: User identifier
+            activity_id: Strava activity ID
+            training_sample: Training data sample
+            
+        Returns:
+            Success boolean
+        """
+        try:
+            filename = f"activity_{activity_id}_training.json"
+            success = self.storage_manager.save_data(training_sample, user_id, 'training_data', filename)
+            
+            if success:
+                logger.debug(f"Stored training sample for activity {activity_id}")
+            else:
+                logger.error(f"Failed to store training sample for activity {activity_id}")
+                
+            return success
+            
+        except Exception as e:
+            logger.error(f"Error storing training sample for activity {activity_id}: {e}")
+            return False
+
+    def get_training_data_stats(self, user_id: str) -> Dict[str, Any]:
+        """
+        Get statistics about user's training data.
+        
+        Args:
+            user_id: User identifier
+            
+        Returns:
+            Dictionary with training data statistics
+        """
+        log_function_entry(logger, "get_training_data_stats")
+        
+        stats = {
+            'total_samples': 0,
+            'route_samples': 0,
+            'activity_samples': 0,
+            'last_updated': None,
+            'activity_ids': []
+        }
+        
+        try:
+            # Count route-based samples
+            route_history = self.storage_manager.list_user_data(user_id, 'routes')
+            stats['route_samples'] = len(route_history)
+            
+            # Count activity-based samples
+            activity_training_data = self.storage_manager.list_user_data(user_id, 'training_data')
+            activity_samples = []
+            
+            for file_info in activity_training_data:
+                filename = file_info.get('filename', '')
+                if filename.startswith('activity_') and filename.endswith('_training.json'):
+                    activity_samples.append(file_info)
+                    # Extract activity ID from filename
+                    try:
+                        activity_id = filename.replace('activity_', '').replace('_training.json', '')
+                        stats['activity_ids'].append(activity_id)
+                    except:
+                        pass
+            
+            stats['activity_samples'] = len(activity_samples)
+            stats['total_samples'] = stats['route_samples'] + stats['activity_samples']
+            
+            # Get last updated timestamp
+            if activity_samples:
+                # Sort by last modified and get the most recent
+                sorted_samples = sorted(activity_samples, 
+                                       key=lambda x: x.get('last_modified', ''), 
+                                       reverse=True)
+                if sorted_samples:
+                    stats['last_updated'] = sorted_samples[0].get('last_modified')
+            
+            logger.info(f"Training data stats for user {user_id}: {stats['total_samples']} total samples "
+                       f"({stats['route_samples']} routes, {stats['activity_samples']} activities)")
+            
+        except Exception as e:
+            logger.error(f"Error getting training data stats: {e}")
+        
+        log_function_exit(logger, "get_training_data_stats")
+        return stats
+
     def get_training_status(self) -> Dict[str, Any]:
         """Get current training status and model information."""
         try:
