@@ -73,7 +73,7 @@ class ModelTrainer:
             # Process route data for route features and actual performance (existing functionality)
             for route_file in route_history[:50]:  # Limit to recent 50 routes for performance
                 try:
-                    route_data = self.storage_manager.load_user_data(user_id, 'routes', route_file.get('filename'))
+                    route_data = self.storage_manager.load_data(user_id, 'routes', route_file.get('filename'))
                     if route_data and 'analysis' in route_data:
                         # Extract features and actual performance
                         sample = self._create_training_sample(rider_features, route_data)
@@ -93,7 +93,7 @@ class ModelTrainer:
                 try:
                     filename = activity_file.get('filename')
                     if filename and filename.startswith('activity_') and filename.endswith('_training.json'):
-                        activity_sample = self.storage_manager.load_user_data(user_id, 'training_data', filename)
+                        activity_sample = self.storage_manager.load_data(user_id, 'training_data', filename)
                         if activity_sample and 'features' in activity_sample:
                             training_data['features'].append(activity_sample['features'])
                             
@@ -189,7 +189,7 @@ class ModelTrainer:
         try:
             # Load most recent fitness data
             if fitness_history:
-                latest_fitness = self.storage_manager.load_user_data(user_id, 'fitness', fitness_history[0])
+                latest_fitness = self.storage_manager.load_data(user_id, 'fitness', fitness_history[0])
                 if latest_fitness:
                     # Extract key metrics from fitness data
                     performance_features = latest_fitness.get('performance_features', {})
@@ -707,3 +707,112 @@ class ModelTrainer:
             'models': {},
             'status': 'No models trained yet'
         }
+    
+    def consolidate_training_data(self, user_id: str) -> Dict[str, Any]:
+        """
+        Consolidate individual activity training files into one large training dataset.
+        
+        Args:
+            user_id: User identifier
+            
+        Returns:
+            Dictionary with consolidation results
+        """
+        log_function_entry(logger, "consolidate_training_data")
+        
+        result = {
+            'success': False,
+            'consolidated_samples': 0,
+            'total_size_mb': 0,
+            'filename': None,
+            'error': None
+        }
+        
+        try:
+            # Get all individual training files
+            activity_training_files = self.storage_manager.list_user_data(user_id, 'training_data')
+            
+            # Filter for activity training files only
+            individual_files = [
+                f for f in activity_training_files 
+                if f.get('filename', '').startswith('activity_') and f.get('filename', '').endswith('_training.json')
+            ]
+            
+            if not individual_files:
+                logger.info(f"No individual training files found for user {user_id}")
+                result['error'] = "No individual training files to consolidate"
+                return result
+            
+            logger.info(f"Found {len(individual_files)} individual training files to consolidate for user {user_id}")
+            
+            # Load all training samples
+            consolidated_data = {
+                'metadata': {
+                    'consolidated_at': datetime.now().isoformat(),
+                    'user_id': user_id,
+                    'source_files_count': len(individual_files),
+                    'version': '1.0',
+                    'description': 'Consolidated training dataset from Strava activities'
+                },
+                'training_samples': []
+            }
+            
+            successful_loads = 0
+            for file_info in individual_files:
+                filename = file_info.get('filename')
+                if not filename:
+                    continue
+                    
+                try:
+                    # Load individual training sample
+                    training_sample = self.storage_manager.load_data(user_id, 'training_data', filename)
+                    if training_sample:
+                        # Add source filename to metadata for traceability
+                        if 'metadata' not in training_sample:
+                            training_sample['metadata'] = {}
+                        training_sample['metadata']['source_file'] = filename
+                        
+                        consolidated_data['training_samples'].append(training_sample)
+                        successful_loads += 1
+                        
+                except Exception as e:
+                    logger.warning(f"Failed to load training file {filename}: {e}")
+            
+            if successful_loads == 0:
+                result['error'] = "Failed to load any training files"
+                return result
+            
+            # Generate filename for consolidated dataset
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            consolidated_filename = f"consolidated_training_dataset_{timestamp}.json"
+            
+            # Calculate estimated size
+            import json
+            json_data = json.dumps(consolidated_data)
+            size_mb = len(json_data.encode('utf-8')) / (1024 * 1024)
+            
+            # Save consolidated dataset
+            success = self.storage_manager.save_data(
+                consolidated_data, 
+                user_id, 
+                'training_data', 
+                consolidated_filename
+            )
+            
+            if success:
+                result['success'] = True
+                result['consolidated_samples'] = successful_loads
+                result['total_size_mb'] = size_mb
+                result['filename'] = consolidated_filename
+                
+                logger.info(f"Successfully consolidated {successful_loads} training samples "
+                           f"into {consolidated_filename} ({size_mb:.2f}MB) for user {user_id}")
+            else:
+                result['error'] = "Failed to save consolidated dataset"
+                
+        except Exception as e:
+            logger.error(f"Error consolidating training data for user {user_id}: {e}")
+            result['error'] = str(e)
+        
+        log_function_exit(logger, "consolidate_training_data")
+        return result
