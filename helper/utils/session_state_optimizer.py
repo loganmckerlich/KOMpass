@@ -20,9 +20,6 @@ class SessionStateOptimizer:
         'authenticated', 'access_token', 'refresh_token', 'expires_at',
         'athlete_info',  # Small athlete profile data
         
-        # UI preferences (small, essential)  
-        'use_imperial',
-        
         # Keep only the latest analysis (not all timestamped versions)
         'latest_analysis_dataframe',
         'latest_weather_analysis',
