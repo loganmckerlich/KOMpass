@@ -134,7 +134,7 @@ class RouteUpload:
             # Fetch recent activities
             with st.spinner("Loading your recent Strava activities..."):
                 try:
-                    activities = oauth_client.get_activities(access_token, per_page=20)
+                    activities = oauth_client.get_activities(access_token, per_page=50)
                     
                     # Filter cycling activities
                     cycling_activities = [
