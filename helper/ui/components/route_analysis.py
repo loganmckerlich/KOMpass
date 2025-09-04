@@ -19,7 +19,6 @@ from ...config.config import get_config
 from ...config.logging_config import get_logger, log_function_entry, log_function_exit
 from ...ml.model_manager import ModelManager
 from ...auth.auth_manager import get_auth_manager
-from ...utils.units import UnitConverter
 
 
 logger = get_logger(__name__)
@@ -33,7 +32,6 @@ class RouteAnalysis:
         self.config = get_config()
         self.route_processor = RouteProcessor(data_dir=self.config.app.data_directory)
         self.weather_analyzer = WeatherAnalyzer()
-        self.unit_converter = UnitConverter()
         self.model_manager = ModelManager()
         self.auth_manager = get_auth_manager()
     
@@ -171,12 +169,12 @@ class RouteAnalysis:
         
         with col1:
             distance = stats.get('total_distance_km', 0)
-            distance_formatted = UnitConverter.format_distance(distance)
+            distance_formatted = f"{distance:.2f} km" if distance is not None else "N/A"
             st.metric("🚴 Distance", distance_formatted)
         
         with col2:
             elevation_gain = stats.get('total_elevation_gain_m', 0)
-            elevation_formatted = UnitConverter.format_elevation(elevation_gain)
+            elevation_formatted = f"{elevation_gain:.0f} m" if elevation_gain is not None else "N/A"
             st.metric("⛰️ Elevation Gain", elevation_formatted)
         
         with col3:
@@ -253,11 +251,15 @@ class RouteAnalysis:
                 st.write("• Min Elevation: N/A (no elevation data)")
                 st.write("• Max Elevation: N/A (no elevation data)")
             else:
-                st.write(f"• Min Elevation: {UnitConverter.format_elevation(min_elevation or 0)}")
-                st.write(f"• Max Elevation: {UnitConverter.format_elevation(max_elevation or 0)}")
+                min_elev_formatted = f"{min_elevation or 0:.0f} m"
+                max_elev_formatted = f"{max_elevation or 0:.0f} m"
+                st.write(f"• Min Elevation: {min_elev_formatted}")
+                st.write(f"• Max Elevation: {max_elev_formatted}")
             
-            st.write(f"• Total Ascent: {UnitConverter.format_elevation(total_ascent)}")
-            st.write(f"• Total Descent: {UnitConverter.format_elevation(total_descent)}")
+            ascent_formatted = f"{total_ascent:.0f} m" if total_ascent is not None else "N/A"
+            descent_formatted = f"{total_descent:.0f} m" if total_descent is not None else "N/A"
+            st.write(f"• Total Ascent: {ascent_formatted}")
+            st.write(f"• Total Descent: {descent_formatted}")
         
         with col2:
             if 'climbs' in elevation_data and elevation_data['climbs']:
