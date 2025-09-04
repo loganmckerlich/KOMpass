@@ -46,8 +46,8 @@ class FeatureEngineer:
             # Extract basic features
             features["basic_features"] = self._extract_basic_features(rider_data)
             
-            # Extract performance features
-            features["performance_features"] = self._extract_performance_features(rider_data)
+            # Extract performance features (pass basic features for FTP fallback)
+            features["performance_features"] = self._extract_performance_features(rider_data, features["basic_features"])
             
             # Extract training pattern features
             features["training_features"] = self._extract_training_features(rider_data)
@@ -88,17 +88,44 @@ class FeatureEngineer:
                 except:
                     pass
             
-            # Extract available numeric fields
-            numeric_fields = ["follower_count", "friend_count", "mutual_friend_count"]
+            # Extract available numeric fields including weight and FTP
+            numeric_fields = ["follower_count", "friend_count", "mutual_friend_count", "weight", "ftp"]
             for field in numeric_fields:
                 if field in basic_info and isinstance(basic_info[field], (int, float)):
-                    basic_features[field] = basic_info[field]
+                    if field == "weight":
+                        basic_features["weight_kg"] = basic_info[field]
+                    elif field == "ftp":
+                        basic_features["athlete_ftp"] = basic_info[field]
+                    else:
+                        basic_features[field] = basic_info[field]
         
         return basic_features
     
-    def _extract_performance_features(self, rider_data: Dict[str, Any]) -> Dict[str, Any]:
+    def _extract_performance_features(self, rider_data: Dict[str, Any], basic_features: Dict[str, Any] = None) -> Dict[str, Any]:
         """Extract performance-related features."""
         performance_features = {}
+        
+        # Extract FTP from zones data as primary source
+        if "zones" in rider_data and rider_data["zones"]:
+            zones_data = rider_data["zones"]
+            
+            # Look for power zones with FTP information
+            if "power" in zones_data and zones_data["power"]:
+                power_zones = zones_data["power"]
+                if "zones" in power_zones and power_zones["zones"]:
+                    # FTP is typically the upper boundary of Zone 4 (Threshold)
+                    # or we can infer it from zone boundaries
+                    zones_list = power_zones["zones"]
+                    if len(zones_list) >= 4:  # Should have at least 4 zones
+                        # Zone 4 (threshold) upper boundary is typically close to FTP
+                        zone4_max = zones_list[3].get("max", 0)
+                        if zone4_max > 0:
+                            performance_features["estimated_ftp"] = zone4_max
+        
+        # If no FTP from zones, try to get from basic_features (athlete_ftp)
+        if "estimated_ftp" not in performance_features and basic_features:
+            if "athlete_ftp" in basic_features and basic_features["athlete_ftp"] > 0:
+                performance_features["estimated_ftp"] = basic_features["athlete_ftp"]
         
         # Power analysis features
         if "power_analysis" in rider_data and rider_data["power_analysis"]:
