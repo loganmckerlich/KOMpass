@@ -74,16 +74,9 @@ class HeaderAndLayout:
             """, unsafe_allow_html=True)
         
         with header_col3:
-            # Unit toggle (Imperial/Metric)
-            st.markdown("**Units:**")
-            use_imperial = st.toggle(
-                "Imperial", 
-                value=st.session_state.get('use_imperial', True),  # Default to imperial
-                key="unit_toggle",
-                help="Toggle between Imperial (miles/feet) and Metric (km/meters)"
-            )
-            # Update session state - this will be the new value after toggle
-            st.session_state['use_imperial'] = use_imperial
+            # Units are always metric - no toggle needed
+            st.markdown("**Units: Metric**")
+            st.caption("km • m • km/h")
     
     def _load_custom_css(self):
         """Load custom CSS for Strava-inspired styling."""

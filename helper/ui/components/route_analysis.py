@@ -166,20 +166,17 @@ class RouteAnalysis:
         """Render key performance indicators."""
         log_function_entry(logger, "render_route_kpis")
         
-        # Check for user unit preference (default to imperial per user request)
-        use_imperial = st.session_state.get('use_imperial', True)
-        
-        # Basic metrics row
+        # Basic metrics row - always use metric units
         col1, col2, col3, col4 = st.columns(4)
         
         with col1:
             distance = stats.get('total_distance_km', 0)
-            distance_formatted = UnitConverter.format_distance(distance, use_imperial)
+            distance_formatted = UnitConverter.format_distance(distance)
             st.metric("🚴 Distance", distance_formatted)
         
         with col2:
             elevation_gain = stats.get('total_elevation_gain_m', 0)
-            elevation_formatted = UnitConverter.format_elevation(elevation_gain, use_imperial)
+            elevation_formatted = UnitConverter.format_elevation(elevation_gain)
             st.metric("⛰️ Elevation Gain", elevation_formatted)
         
         with col3:
@@ -241,9 +238,7 @@ class RouteAnalysis:
             else:
                 st.info(f"ℹ️ **Minimal elevation changes**: Route elevation varies by only {elevation_range:.1f}m")
         
-        # Check for user unit preference (default to imperial per user request)
-        use_imperial = st.session_state.get('use_imperial', True)
-        
+        # Always use metric units
         col1, col2 = st.columns(2)
         
         with col1:
@@ -258,11 +253,11 @@ class RouteAnalysis:
                 st.write("• Min Elevation: N/A (no elevation data)")
                 st.write("• Max Elevation: N/A (no elevation data)")
             else:
-                st.write(f"• Min Elevation: {UnitConverter.format_elevation(min_elevation or 0, use_imperial)}")
-                st.write(f"• Max Elevation: {UnitConverter.format_elevation(max_elevation or 0, use_imperial)}")
+                st.write(f"• Min Elevation: {UnitConverter.format_elevation(min_elevation or 0)}")
+                st.write(f"• Max Elevation: {UnitConverter.format_elevation(max_elevation or 0)}")
             
-            st.write(f"• Total Ascent: {UnitConverter.format_elevation(total_ascent, use_imperial)}")
-            st.write(f"• Total Descent: {UnitConverter.format_elevation(total_descent, use_imperial)}")
+            st.write(f"• Total Ascent: {UnitConverter.format_elevation(total_ascent)}")
+            st.write(f"• Total Descent: {UnitConverter.format_elevation(total_descent)}")
         
         with col2:
             if 'climbs' in elevation_data and elevation_data['climbs']:
