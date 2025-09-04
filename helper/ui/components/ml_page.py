@@ -244,7 +244,14 @@ class MLPage:
         """Render speed predictions for the given route."""
         st.markdown("## 🎯 Speed Predictions")
         
-        # Get predictions from model
+        # Check if models are ready before attempting predictions
+        model_status = self.model_manager.are_models_trained_and_ready()
+        
+        if not model_status['ready']:
+            self._display_model_status_message(model_status)
+            return
+        
+        # Models are ready - get predictions
         try:
             user_id = self._get_user_id()
             predictions = self.model_manager.predict_speeds(
@@ -254,18 +261,40 @@ class MLPage:
             )
             
             if predictions and predictions.get('status') == 'success':
-                self._display_prediction_results(predictions, route_data)
+                self._display_prediction_results(predictions, route_data, model_status)
             else:
-                # Show demo predictions if model not ready
-                self._display_demo_predictions(route_data)
+                st.error("❌ Failed to generate predictions. Please try again or refresh models.")
                 
         except Exception as e:
             logger.error(f"Error getting predictions: {e}")
-            st.warning("⚠️ Prediction models are still training. Showing demo predictions.")
-            self._display_demo_predictions(route_data)
+            st.error("❌ Error generating predictions. Please try again or refresh models.")
     
-    def _display_prediction_results(self, predictions: Dict[str, Any], route_data: Dict[str, Any]):
-        """Display actual prediction results."""
+    def _display_model_status_message(self, model_status: Dict[str, Any]):
+        """Display message about model training status."""
+        status = model_status.get('status', 'unknown')
+        message = model_status.get('message', 'Unknown status')
+        
+        if status == 'no_models':
+            st.info(f"🤖 {message}")
+            st.markdown("""
+            **To get personalized speed predictions:**
+            1. Upload route data or use quick parameters above
+            2. The system will automatically train models using your fitness data
+            3. Once training is complete, you'll see accurate speed predictions
+            """)
+            
+        elif status == 'training_in_progress':
+            st.info(f"🔄 {message}")
+            st.markdown("**Please wait while your personalized models are being trained. This usually takes a few minutes.**")
+            
+        elif status == 'error':
+            st.error(f"❌ {message}")
+            
+        else:
+            st.warning(f"⚠️ {message}")
+    
+    def _display_prediction_results(self, predictions: Dict[str, Any], route_data: Dict[str, Any], model_status: Dict[str, Any]):
+        """Display actual prediction results with model accuracy information."""
         analysis = route_data.get('analysis', {})
         pred_data = predictions.get('predictions', {})
         
@@ -317,15 +346,80 @@ class MLPage:
             </div>
             """.format(threshold_speed, threshold_time // 60, threshold_time % 60), unsafe_allow_html=True)
         
-        # Confidence and model info
-        if 'confidence' in predictions:
-            confidence = predictions['confidence']
-            st.markdown(f"**Model Confidence:** {confidence:.1%}")
+        # Model accuracy and confidence information
+        st.markdown("---")
+        self._display_model_accuracy_info(model_status)
+    
+    def _display_model_accuracy_info(self, model_status: Dict[str, Any]):
+        """Display model accuracy and confidence information."""
+        st.markdown("### 📊 Model Accuracy Information")
         
-        if 'model_info' in predictions:
-            with st.expander("ℹ️ Model Information"):
-                model_info = predictions['model_info']
-                st.json(model_info)
+        models = model_status.get('models', {})
+        last_training = model_status.get('last_training')
+        
+        if not models:
+            st.info("No model accuracy information available.")
+            return
+        
+        # Display training date
+        if last_training:
+            from datetime import datetime
+            try:
+                training_date = datetime.fromisoformat(last_training.replace('Z', '+00:00'))
+                st.markdown(f"**Last Training:** {training_date.strftime('%Y-%m-%d %H:%M')}")
+            except:
+                st.markdown(f"**Last Training:** {last_training}")
+        
+        # Display accuracy for each model
+        col1, col2 = st.columns(2)
+        
+        for i, (model_name, model_data) in enumerate(models.items()):
+            metrics = model_data.get('metrics', {})
+            confidence = model_data.get('confidence', 0)
+            
+            with col1 if i % 2 == 0 else col2:
+                # Determine model display name
+                display_name = "Zone 2 (Endurance)" if model_name == "zone2" else "Threshold" if model_name == "threshold" else model_name.title()
+                
+                # Determine accuracy level description
+                r2_score = metrics.get('r2_score', 0)
+                if r2_score >= 0.8:
+                    accuracy_desc = "Excellent"
+                    accuracy_color = "#10B981"
+                elif r2_score >= 0.6:
+                    accuracy_desc = "Good"
+                    accuracy_color = "#F59E0B"
+                elif r2_score >= 0.4:
+                    accuracy_desc = "Fair"
+                    accuracy_color = "#EF4444"
+                else:
+                    accuracy_desc = "Limited"
+                    accuracy_color = "#6B7280"
+                
+                st.markdown(f"""
+                <div style="border: 1px solid {accuracy_color}; padding: 0.8rem; border-radius: 6px; margin: 0.3rem 0;">
+                    <h5 style="margin: 0; color: {accuracy_color};">{display_name}</h5>
+                    <p style="margin: 0.2rem 0;"><strong>Accuracy:</strong> {accuracy_desc} ({r2_score:.1%})</p>
+                    <p style="margin: 0.2rem 0;"><strong>Confidence:</strong> {confidence:.1%}</p>
+                    <p style="margin: 0;"><small>Error: ±{metrics.get('mae', 0):.1f} km/h</small></p>
+                </div>
+                """, unsafe_allow_html=True)
+        
+        # Overall interpretation
+        if models:
+            avg_r2 = sum(model.get('metrics', {}).get('r2_score', 0) for model in models.values()) / len(models)
+            
+            if avg_r2 >= 0.7:
+                st.success("✅ **High Accuracy**: Your models are well-trained and should provide reliable predictions.")
+            elif avg_r2 >= 0.5:
+                st.info("ℹ️ **Moderate Accuracy**: Models provide reasonable predictions. Consider adding more training data for better accuracy.")
+            else:
+                st.warning("⚠️ **Limited Accuracy**: Predictions may be less reliable. More training data recommended.")
+                
+        # Show training samples info if available
+        total_samples = sum(model.get('metrics', {}).get('training_samples', 0) for model in models.values())
+        if total_samples > 0:
+            st.markdown(f"**Training Data:** {total_samples} samples used across all models")
     
     def _display_demo_predictions(self, route_data: Dict[str, Any]):
         """Display demo predictions when models aren't ready."""
