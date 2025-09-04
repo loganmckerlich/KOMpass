@@ -82,6 +82,7 @@ class HeaderAndLayout:
                 key="unit_toggle",
                 help="Toggle between Imperial (miles/feet) and Metric (km/meters)"
             )
+            # Update session state - this will be the new value after toggle
             st.session_state['use_imperial'] = use_imperial
     
     def _load_custom_css(self):
