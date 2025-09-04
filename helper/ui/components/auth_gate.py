@@ -116,22 +116,19 @@ class AuthenticationGate:
         col1, col2, col3 = st.columns([1, 1, 1])
         
         with col2:
-            if st.button(
-                "🚴 Connect with Strava", 
-                key="strava_connect",
-                help="Connect your Strava account to get started"
-            ):
-                # Get authorization URL and redirect
-                auth_url = self.auth_manager.get_authorization_url()
-                if auth_url:
-                    st.markdown(f"""
-                    <script>
-                        window.open("{auth_url}", "_self");
-                    </script>
-                    """, unsafe_allow_html=True)
-                    st.info("🔄 Redirecting to Strava...")
-                else:
-                    st.error("❌ Failed to generate authorization URL. Please try again.")
+            # Get authorization URL
+            auth_url = self.auth_manager.get_authorization_url()
+            
+            if auth_url:
+                # Use st.link_button for proper OAuth redirect (works reliably across browsers)
+                st.link_button(
+                    "🚴 Connect with Strava",
+                    auth_url,
+                    help="Connect your Strava account to get started",
+                    type="primary"
+                )
+            else:
+                st.error("❌ Failed to generate authorization URL. Please try again.")
     
     def _load_auth_css(self):
         """Load CSS styling for the authentication page."""
