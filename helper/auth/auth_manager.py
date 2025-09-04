@@ -199,6 +199,9 @@ class AuthenticationManager:
                         # Add recent Strava activities to training data (NEW FUNCTIONALITY)
                         self._add_activities_to_training_data(user_id, access_token, rider_data)
                         
+                        # **NEW**: Trigger automatic model training after data collection
+                        self._trigger_automatic_model_training(user_id)
+                        
                     else:
                         st.session_state["rider_fitness_data"] = None
                         
@@ -519,6 +522,70 @@ class AuthenticationManager:
             # Return default values if extraction fails
         
         return features
+
+    def _trigger_automatic_model_training(self, user_id: str):
+        """
+        Trigger automatic model training after successful authentication and data collection.
+        
+        Args:
+            user_id: User identifier
+        """
+        log_function_entry(logger, "_trigger_automatic_model_training")
+        
+        try:
+            # Import ModelManager here to avoid circular imports
+            from ..ml.model_manager import ModelManager
+            
+            logger.info(f"Initiating automatic model training for user {user_id}")
+            
+            # Initialize model manager
+            model_manager = ModelManager()
+            
+            # Check if training is needed
+            training_check = model_manager.check_training_need(user_id)
+            
+            if training_check.get('needs_training', False):
+                logger.info("Model training needed - initiating automatic training")
+                
+                # Start training asynchronously
+                training_result = model_manager.initiate_model_training(user_id, async_training=True)
+                
+                if training_result.get('status') == 'training_initiated':
+                    logger.info("Automatic model training started successfully")
+                    
+                    # Store training status in session state for UI feedback
+                    st.session_state['auto_training_status'] = {
+                        'status': 'training_started',
+                        'message': 'Model training started automatically',
+                        'timestamp': datetime.now().isoformat()
+                    }
+                else:
+                    logger.warning(f"Failed to start automatic training: {training_result.get('error', 'Unknown error')}")
+                    
+                    st.session_state['auto_training_status'] = {
+                        'status': 'training_failed',
+                        'message': training_result.get('error', 'Unknown error'),
+                        'timestamp': datetime.now().isoformat()
+                    }
+            else:
+                logger.info("Model training not needed - models are up to date")
+                
+                st.session_state['auto_training_status'] = {
+                    'status': 'training_not_needed',
+                    'message': 'Models are already trained and up to date',
+                    'timestamp': datetime.now().isoformat()
+                }
+                
+        except Exception as e:
+            log_error(logger, e, "Failed to trigger automatic model training")
+            
+            st.session_state['auto_training_status'] = {
+                'status': 'training_error',
+                'message': f'Training initiation failed: {str(e)}',
+                'timestamp': datetime.now().isoformat()
+            }
+        
+        log_function_exit(logger, "_trigger_automatic_model_training")
 
     def logout(self):
         """Clear authentication state and log out user."""

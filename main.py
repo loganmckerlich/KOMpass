@@ -65,41 +65,45 @@ def main():
         # Handle OAuth callback if present
         auth_manager.handle_oauth_callback()
         
+        # **NEW**: Authentication-first workflow
+        # Check if user is authenticated - if not, show only authentication screen
+        if not auth_manager.is_authenticated():
+            logger.info("User not authenticated - showing authentication gate")
+            ui_components.render_authentication_gate()
+            return
+        
+        # User is authenticated - proceed with main application
+        logger.info("User authenticated - rendering main application")
+        
         # Render main UI
         ui_components.render_app_header()
         
-        # Navigation and page rendering
+        # Navigation and page rendering (updated for new workflow)
         with st.sidebar:
             selected_page_raw = ui_components.render_navigation_sidebar()
         
-        # Check for navigation flags and update page selection if needed
-        if st.session_state.get('nav_to_upload', False):
-            st.session_state['selected_page_index'] = 1  # Route Upload page
-            st.session_state['nav_to_upload'] = False  # Clear the flag
-            st.rerun()
-        
         # Clean page name by removing emoji and extra spaces
         # Handle both emoji-prefixed names and plain names
-        if ' ' in selected_page_raw and selected_page_raw.startswith(('🏠', '📁', '🤖')):
+        if ' ' in selected_page_raw and selected_page_raw.startswith(('🎯', '📊', '🚴')):
             selected_page = selected_page_raw.split(' ', 1)[1]
         else:
             selected_page = selected_page_raw
         logger.debug(f"User navigated to page: {selected_page_raw} -> {selected_page}")
         
-        # Route to appropriate page
-        if selected_page == "Home":
-            ui_components.render_home_page()
+        # Route to appropriate page (updated workflow)
+        if selected_page == "Speed Predictions":
+            ui_components.render_ml_page()
+        
+        elif selected_page == "User Stats":
+            ui_components.render_user_stats_page()
         
         elif selected_page == "Route Upload":
             ui_components.render_route_upload_page()
         
-        elif selected_page == "ML Predictions":
-            ui_components.render_ml_page()
-        
         else:
             logger.warning(f"Unknown page selected: {selected_page}")
             st.error(f"Unknown page: {selected_page}")
-            st.info("Available pages: Home, Route Upload, ML Predictions")
+            st.info("Available pages: Speed Predictions, User Stats, Route Upload")
         
         logger.debug("Main application rendering completed")
         

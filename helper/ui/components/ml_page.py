@@ -31,402 +31,390 @@ class MLPage:
         log_function_exit(logger, "__init__")
     
     def render_ml_page(self):
-        """Render the main ML page."""
+        """Render the main ML page focused on speed predictions."""
         log_function_entry(logger, "render_ml_page")
         
-        st.markdown("# 🤖 Machine Learning Speed Predictions")
-        st.markdown("Use AI to predict your speed on any route based on your fitness profile and route characteristics.")
+        st.markdown("# 🎯 Speed Predictions")
+        st.markdown("Get AI-powered speed predictions for your routes based on your personal fitness data and route characteristics.")
         
-        # Check authentication
+        # Check authentication (should always be true in new workflow, but double-check)
         if not self.auth_manager.is_authenticated():
-            st.info("🔒 Please log in with Strava to access ML predictions and personalized training.")
-            self._render_demo_section()
+            st.error("🔒 Authentication required. Please log in to access speed predictions.")
             return
+        
+        # Check for auto-training status and show feedback
+        self._render_training_status()
         
         # Get rider data
         rider_data = st.session_state.get("rider_fitness_data")
         if not rider_data:
-            st.warning("⚠️ No rider fitness data available. Please ensure your Strava data has been loaded.")
-            self._render_demo_section()
+            st.warning("⚠️ Loading your fitness data...")
+            st.info("💡 We're analyzing your recent Strava activities to personalize predictions.")
             return
         
-        # Main ML interface
-        tab1, tab2, tab3 = st.tabs(["🎯 Speed Predictions", "🔧 Model Training", "📊 Model Info"])
-        
-        with tab1:
-            self._render_prediction_tab(rider_data)
-        
-        with tab2:
-            self._render_training_tab()
-        
-        with tab3:
-            self._render_model_info_tab()
+        # Main prediction interface
+        self._render_prediction_interface(rider_data)
         
         log_function_exit(logger, "render_ml_page")
     
-    def _render_prediction_tab(self, rider_data: Dict[str, Any]):
-        """Render the speed prediction interface."""
-        st.markdown("## 🎯 Route Speed Predictions")
-        st.markdown("Get AI-powered speed predictions for your routes at different effort levels.")
+    def _render_training_status(self):
+        """Render training status notifications."""
+        auto_training_status = st.session_state.get('auto_training_status')
         
-        # Route selection options
-        col1, col2 = st.columns([2, 1])
+        if auto_training_status:
+            status = auto_training_status.get('status', '')
+            message = auto_training_status.get('message', '')
+            
+            if status == 'training_started':
+                st.success(f"🤖 {message}")
+                if st.session_state.get('training_data_update', {}).get('processed', 0) > 0:
+                    processed = st.session_state['training_data_update']['processed']
+                    st.info(f"📊 Processed {processed} recent activities for training")
+            
+            elif status == 'training_not_needed':
+                st.info(f"✅ {message}")
+            
+            elif status in ['training_failed', 'training_error']:
+                st.warning(f"⚠️ {message}")
+            
+            # Training in progress check
+            if self.model_manager.is_training_in_progress():
+                st.info("🔄 Model training in progress... Predictions will improve once complete.")
+    
+    def _render_prediction_interface(self, rider_data: Dict[str, Any]):
+        """Render the main prediction interface."""
+        st.markdown("## 🗺️ Route Input")
+        
+        # Route input options
+        col1, col2 = st.columns([3, 1])
         
         with col1:
-            prediction_method = st.radio(
-                "Choose prediction method:",
-                ["Upload new route", "Use saved route", "Quick route parameters"],
-                horizontal=True
+            input_method = st.radio(
+                "How would you like to input your route?",
+                [
+                    "📁 Upload GPX file",
+                    "🚴 Use saved Strava route",
+                    "⚡ Quick route parameters"
+                ],
+                help="Choose your preferred method for route analysis"
             )
         
         with col2:
-            effort_levels = st.multiselect(
-                "Effort levels to predict:",
-                ["zone2", "threshold"],
-                default=["zone2", "threshold"]
-            )
+            if st.button("🔄 Refresh Models", help="Update prediction models with latest data"):
+                self._refresh_models()
         
+        # Handle different input methods
         route_data = None
         
-        if prediction_method == "Upload new route":
-            route_data = self._handle_route_upload()
+        if input_method == "📁 Upload GPX file":
+            route_data = self._handle_gpx_upload()
         
-        elif prediction_method == "Use saved route":
-            route_data = self._handle_saved_route_selection()
+        elif input_method == "🚴 Use saved Strava route":
+            route_data = self._handle_strava_route_selection()
         
-        elif prediction_method == "Quick route parameters":
-            route_data = self._handle_quick_route_input()
+        elif input_method == "⚡ Quick route parameters":
+            route_data = self._handle_quick_parameters()
         
-        # Generate predictions if we have route data
-        if route_data and effort_levels:
-            if st.button("🚀 Generate Speed Predictions", type="primary"):
-                with st.spinner("Generating AI predictions..."):
-                    predictions = self.model_manager.predict_route_speed(
-                        rider_data, route_data, effort_levels
-                    )
-                    self._display_predictions(predictions, route_data)
+        # Show predictions if we have route data
+        if route_data:
+            st.markdown("---")
+            self._render_predictions(route_data, rider_data)
     
-    def _render_training_tab(self, ):
-        """Render the model training interface."""
-        st.markdown("## 🔧 Model Training")
-        st.markdown("Train personalized AI models using your ride history.")
-        
-        # Get current user ID
-        athlete_info = st.session_state.get("athlete_info", {})
-        user_id = str(athlete_info.get("id", "unknown"))
-        
-        if user_id == "unknown":
-            st.error("Unable to identify user for training. Please ensure you're logged in.")
-            return
-        
-        # Check training status
-        training_need = self.model_manager.check_training_need(user_id)
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.markdown("### Training Status")
-            
-            if training_need.get('training_in_progress', False):
-                st.info("🔄 Model training is currently in progress...")
-            elif training_need.get('needs_training', False):
-                st.warning("📈 Model training is recommended")
-                for reason in training_need.get('reasons', []):
-                    st.write(f"• {reason}")
-            else:
-                st.success("✅ Models are up to date")
-            
-            # Training statistics
-            data_count = training_need.get('user_data_count', {})
-            st.metric("Available fitness records", data_count.get('fitness_files', 0))
-            st.metric("Available route records", data_count.get('route_files', 0))
-        
-        with col2:
-            st.markdown("### Training Controls")
-            
-            if not training_need.get('training_in_progress', False):
-                if st.button("🚀 Start Model Training", type="primary"):
-                    self._initiate_training(user_id)
-                
-                if training_need.get('last_training'):
-                    st.write(f"Last training: {training_need['last_training']}")
-                else:
-                    st.write("No previous training found")
-            
-            # Training information
-            st.markdown("### Training Information")
-            st.info("Training runs synchronously and will show progress in real-time.")
-            
-    def _render_model_info_tab(self):
-        """Render model transparency and information."""
-        st.markdown("## 📊 Model Information & Transparency")
-        st.markdown("Learn about the AI models powering your speed predictions.")
-        
-        try:
-            transparency_info = self.model_manager.get_model_transparency_info()
-            
-            # Model Architecture
-            st.markdown("### 🏗️ Model Architecture")
-            arch_info = transparency_info.get('model_architecture', {})
-            
-            col1, col2 = st.columns(2)
-            with col1:
-                st.write(f"**Model Type:** {arch_info.get('type', 'N/A')}")
-                st.write(f"**Features Used:** {arch_info.get('feature_count', 0)}")
-                st.write(f"**Preprocessing:** {arch_info.get('preprocessing', 'N/A')}")
-            
-            with col2:
-                training_info = transparency_info.get('training_info', {})
-                st.write(f"**Models Available:** {training_info.get('total_models', 0)}")
-                st.write(f"**Last Training:** {training_info.get('last_training', 'Never')}")
-            
-            # Feature details
-            with st.expander("📝 Model Features (Click to expand)"):
-                features = arch_info.get('features', [])
-                if features:
-                    feature_df = pd.DataFrame({
-                        'Feature': features,
-                        'Category': ['Rider'] * 6 + ['Route'] * 6
-                    })
-                    st.dataframe(feature_df, use_container_width=True)
-            
-            # Model Performance
-            st.markdown("### 📈 Model Performance")
-            performance = transparency_info.get('model_performance', {})
-            
-            if performance:
-                perf_data = []
-                for model_name, metrics in performance.items():
-                    perf_data.append({
-                        'Effort Level': model_name.title(),
-                        'Accuracy (R²)': f"{metrics.get('r2_score', 0):.3f}",
-                        'Average Error (km/h)': f"{metrics.get('mean_absolute_error_kmh', 0):.2f}",
-                        'Model Type': metrics.get('model_type', 'N/A'),
-                        'Training Samples': metrics.get('training_samples', 0),
-                        'Confidence': f"{metrics.get('confidence', 0):.2f}"
-                    })
-                
-                if perf_data:
-                    perf_df = pd.DataFrame(perf_data)
-                    st.dataframe(perf_df, use_container_width=True)
-            else:
-                st.info("No trained models available yet. Train models to see performance metrics.")
-            
-            # Prediction Methodology
-            with st.expander("🔬 Prediction Methodology (Click to expand)"):
-                methodology = transparency_info.get('prediction_methodology', {})
-                st.markdown(f"**ML Prediction:** {methodology.get('ml_prediction', 'N/A')}")
-                st.markdown(f"**Fallback Method:** {methodology.get('fallback_prediction', 'N/A')}")
-                st.markdown(f"**Confidence Scoring:** {methodology.get('confidence_scoring', 'N/A')}")
-        
-        except Exception as e:
-            logger.error(f"Error rendering model info: {e}")
-            st.error("Failed to load model information. Please try again.")
-    
-    def _render_demo_section(self):
-        """Render demo section for unauthenticated users."""
-        st.markdown("## 🎮 Demo: Speed Prediction")
-        st.markdown("See how AI speed prediction works with sample data.")
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.markdown("### Sample Rider")
-            st.write("• FTP: 250W")
-            st.write("• Weight: 75kg") 
-            st.write("• Experience: 3 years")
-            st.write("• Training: 8 hours/week")
-        
-        with col2:
-            st.markdown("### Sample Route")
-            distance = st.slider("Distance (km)", 20, 150, 80)
-            elevation = st.slider("Elevation gain (m)", 0, 2000, 800)
-            
-        if st.button("🎯 Generate Demo Prediction"):
-            # Create demo data
-            demo_rider = {
-                'performance_features': {'estimated_ftp': 250, 'weighted_power_avg': 220},
-                'basic_features': {'weight_kg': 75},
-                'training_features': {'hours_per_week': 8},
-                'composite_scores': {'overall_fitness_score': 75}
-            }
-            
-            demo_route = {
-                'analysis': {
-                    'distance_km': distance,
-                    'total_elevation_gain': elevation,
-                    'avg_gradient_percent': elevation / (distance * 10),
-                    'max_gradient_percent': elevation / (distance * 5),
-                    'elevation_variability': elevation * 0.3,
-                    'power_analysis': {'estimated_power_requirement': 240}
-                }
-            }
-            
-            predictions = self.model_manager.predict_route_speed(demo_rider, demo_route)
-            self._display_predictions(predictions, demo_route, is_demo=True)
-    
-    def _handle_route_upload(self) -> Optional[Dict[str, Any]]:
-        """Handle route file upload for prediction."""
+    def _handle_gpx_upload(self) -> Optional[Dict[str, Any]]:
+        """Handle GPX file upload for predictions."""
         uploaded_file = st.file_uploader(
-            "Upload GPX file",
+            "Upload your route GPX file",
             type=['gpx'],
-            help="Upload a GPX file to get speed predictions"
+            help="Upload a GPX file to get personalized speed predictions"
         )
         
         if uploaded_file is not None:
-            # Process the uploaded route
-            # For now, return a placeholder - in real implementation,
-            # this would use the route processor
-            st.success(f"Route uploaded: {uploaded_file.name}")
+            try:
+                # Process the GPX file (placeholder - real implementation would use route processor)
+                st.success(f"✅ Route uploaded: {uploaded_file.name}")
+                
+                # For demo purposes, return mock route data
+                return {
+                    'filename': uploaded_file.name,
+                    'source': 'gpx_upload',
+                    'analysis': {
+                        'distance_km': 42.5,
+                        'total_elevation_gain': 650,
+                        'avg_gradient_percent': 1.8,
+                        'max_gradient_percent': 12.3,
+                        'elevation_variability': 180,
+                        'terrain_type': 'mixed',
+                        'power_analysis': {
+                            'estimated_power_requirement': 245
+                        }
+                    }
+                }
+                
+            except Exception as e:
+                st.error(f"❌ Error processing GPX file: {str(e)}")
+                return None
+        
+        return None
+    
+    def _handle_strava_route_selection(self) -> Optional[Dict[str, Any]]:
+        """Handle selection of saved Strava routes."""
+        # This would integrate with Strava route fetching
+        st.info("🚧 Strava route integration coming soon!")
+        
+        # Placeholder for saved routes
+        if st.button("📊 Use Demo Route"):
             return {
-                'filename': uploaded_file.name,
+                'filename': 'demo_strava_route.gpx',
+                'source': 'strava_route',
                 'analysis': {
-                    'distance_km': 75,  # Placeholder
-                    'total_elevation_gain': 900,
+                    'distance_km': 38.2,
+                    'total_elevation_gain': 420,
                     'avg_gradient_percent': 1.2,
-                    'max_gradient_percent': 8.5,
-                    'elevation_variability': 200,
-                    'power_analysis': {'estimated_power_requirement': 230}
+                    'max_gradient_percent': 8.7,
+                    'elevation_variability': 125,
+                    'terrain_type': 'rolling',
+                    'power_analysis': {
+                        'estimated_power_requirement': 220
+                    }
                 }
             }
         
         return None
     
-    def _handle_saved_route_selection(self) -> Optional[Dict[str, Any]]:
-        """Handle selection of saved route."""
-        st.info("Saved route selection - Feature coming soon!")
-        return None
-    
-    def _handle_quick_route_input(self) -> Optional[Dict[str, Any]]:
+    def _handle_quick_parameters(self) -> Optional[Dict[str, Any]]:
         """Handle quick route parameter input."""
         st.markdown("### Quick Route Setup")
         
-        col1, col2, col3 = st.columns(3)
+        col1, col2 = st.columns(2)
         
         with col1:
-            distance = st.number_input("Distance (km)", min_value=5, max_value=300, value=75)
+            distance = st.number_input(
+                "Distance (km)",
+                min_value=1.0,
+                max_value=300.0,
+                value=25.0,
+                step=0.5
+            )
+            
+            elevation_gain = st.number_input(
+                "Total Elevation Gain (m)",
+                min_value=0,
+                max_value=5000,
+                value=200,
+                step=10
+            )
         
         with col2:
-            elevation = st.number_input("Elevation gain (m)", min_value=0, max_value=5000, value=800)
+            avg_gradient = st.number_input(
+                "Average Gradient (%)",
+                min_value=0.0,
+                max_value=15.0,
+                value=1.0,
+                step=0.1
+            )
+            
+            max_gradient = st.number_input(
+                "Maximum Gradient (%)",
+                min_value=0.0,
+                max_value=25.0,
+                value=5.0,
+                step=0.5
+            )
         
-        with col3:
-            difficulty = st.selectbox("Route type", ["Flat", "Rolling", "Hilly", "Mountainous"])
-        
-        # Calculate route characteristics based on inputs
-        if difficulty == "Flat":
-            avg_gradient = 0.5
-            max_gradient = 3
-        elif difficulty == "Rolling":
-            avg_gradient = 1.5
-            max_gradient = 6
-        elif difficulty == "Hilly":
-            avg_gradient = 3.0
-            max_gradient = 10
-        else:  # Mountainous
-            avg_gradient = 5.0
-            max_gradient = 15
-        
-        return {
-            'filename': f"Quick Route ({distance}km, {elevation}m)",
-            'analysis': {
-                'distance_km': distance,
-                'total_elevation_gain': elevation,
-                'avg_gradient_percent': avg_gradient,
-                'max_gradient_percent': max_gradient,
-                'elevation_variability': elevation * 0.4,
-                'power_analysis': {'estimated_power_requirement': 200 + elevation / 10}
+        if st.button("🎯 Generate Predictions"):
+            return {
+                'filename': 'quick_route_parameters',
+                'source': 'manual_input',
+                'analysis': {
+                    'distance_km': distance,
+                    'total_elevation_gain': elevation_gain,
+                    'avg_gradient_percent': avg_gradient,
+                    'max_gradient_percent': max_gradient,
+                    'elevation_variability': elevation_gain / max(1, distance) * 10,  # Rough estimate
+                    'terrain_type': 'custom',
+                    'power_analysis': {
+                        'estimated_power_requirement': 200 + (elevation_gain / distance) * 30  # Rough estimate
+                    }
+                }
             }
-        }
-    
-    def _display_predictions(self, predictions: Dict[str, Any], route_data: Dict[str, Any], is_demo: bool = False):
-        """Display speed prediction results."""
-        st.markdown("### 🎯 Prediction Results")
         
-        if 'error' in predictions:
-            st.error(f"Prediction failed: {predictions['error']}")
-            return
+        return None
+    
+    def _render_predictions(self, route_data: Dict[str, Any], rider_data: Dict[str, Any]):
+        """Render speed predictions for the given route."""
+        st.markdown("## 🎯 Speed Predictions")
+        
+        # Get predictions from model
+        try:
+            user_id = self._get_user_id()
+            predictions = self.model_manager.predict_speeds(
+                user_id=user_id,
+                route_data=route_data,
+                rider_data=rider_data
+            )
+            
+            if predictions and predictions.get('status') == 'success':
+                self._display_prediction_results(predictions, route_data)
+            else:
+                # Show demo predictions if model not ready
+                self._display_demo_predictions(route_data)
+                
+        except Exception as e:
+            logger.error(f"Error getting predictions: {e}")
+            st.warning("⚠️ Prediction models are still training. Showing demo predictions.")
+            self._display_demo_predictions(route_data)
+    
+    def _display_prediction_results(self, predictions: Dict[str, Any], route_data: Dict[str, Any]):
+        """Display actual prediction results."""
+        analysis = route_data.get('analysis', {})
+        pred_data = predictions.get('predictions', {})
         
         # Route summary
-        analysis = route_data.get('analysis', {})
-        
         col1, col2, col3, col4 = st.columns(4)
+        
         with col1:
-            st.metric("Distance", f"{analysis.get('distance_km', 0):.1f} km")
+            st.metric("📏 Distance", f"{analysis.get('distance_km', 0):.1f} km")
+        
         with col2:
-            st.metric("Elevation Gain", f"{analysis.get('total_elevation_gain', 0):.0f} m")
+            st.metric("⛰️ Elevation", f"{analysis.get('total_elevation_gain', 0):.0f} m")
+        
         with col3:
-            st.metric("Avg Gradient", f"{analysis.get('avg_gradient_percent', 0):.1f}%")
+            st.metric("📈 Avg Grade", f"{analysis.get('avg_gradient_percent', 0):.1f}%")
+        
         with col4:
-            st.metric("Max Gradient", f"{analysis.get('max_gradient_percent', 0):.1f}%")
+            st.metric("⚡ Est. Power", f"{analysis.get('power_analysis', {}).get('estimated_power_requirement', 0):.0f} W")
+        
+        st.markdown("---")
         
         # Speed predictions
-        st.markdown("### Speed & Time Predictions")
+        st.markdown("### 🏃 Predicted Speeds")
         
-        prediction_data = []
-        for effort_level, prediction in predictions.items():
-            if effort_level.startswith('_'):  # Skip metadata
-                continue
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            # Zone 2 (Endurance) prediction
+            zone2_speed = pred_data.get('zone2_speed', 0)
+            zone2_time = (analysis.get('distance_km', 0) / zone2_speed * 60) if zone2_speed > 0 else 0
             
-            speed = prediction.get('speed_kmh', 0)
-            confidence = prediction.get('confidence', 0)
-            method = prediction.get('method', 'unknown')
+            st.markdown("""
+            <div style="background: linear-gradient(135deg, #10B981, #059669); color: white; padding: 1rem; border-radius: 8px; margin: 0.5rem 0;">
+                <h4>🟢 Zone 2 (Endurance)</h4>
+                <p style="font-size: 1.5rem; margin: 0;"><strong>{:.1f} km/h</strong></p>
+                <p style="margin: 0;">Estimated time: {:.0f}:{:02.0f}</p>
+            </div>
+            """.format(zone2_speed, zone2_time // 60, zone2_time % 60), unsafe_allow_html=True)
+        
+        with col2:
+            # Threshold prediction
+            threshold_speed = pred_data.get('threshold_speed', 0)
+            threshold_time = (analysis.get('distance_km', 0) / threshold_speed * 60) if threshold_speed > 0 else 0
             
-            # Calculate time
-            distance = analysis.get('distance_km', 0)
-            time_hours = distance / speed if speed > 0 else 0
-            time_str = f"{int(time_hours)}:{int((time_hours % 1) * 60):02d}"
-            
-            prediction_data.append({
-                'Effort Level': effort_level.replace('zone2', 'Zone 2 (Endurance)').replace('threshold', 'Threshold'),
-                'Predicted Speed': f"{speed:.1f} km/h",
-                'Estimated Time': time_str,
-                'Confidence': f"{confidence:.1%}",
-                'Method': method.replace('_', ' ').title()
-            })
+            st.markdown("""
+            <div style="background: linear-gradient(135deg, #F59E0B, #D97706); color: white; padding: 1rem; border-radius: 8px; margin: 0.5rem 0;">
+                <h4>🟡 Threshold</h4>
+                <p style="font-size: 1.5rem; margin: 0;"><strong>{:.1f} km/h</strong></p>
+                <p style="margin: 0;">Estimated time: {:.0f}:{:02.0f}</p>
+            </div>
+            """.format(threshold_speed, threshold_time // 60, threshold_time % 60), unsafe_allow_html=True)
         
-        if prediction_data:
-            pred_df = pd.DataFrame(prediction_data)
-            st.dataframe(pred_df, use_container_width=True)
+        # Confidence and model info
+        if 'confidence' in predictions:
+            confidence = predictions['confidence']
+            st.markdown(f"**Model Confidence:** {confidence:.1%}")
         
-        # Additional insights
-        metadata = predictions.get('_metadata', {})
-        if metadata.get('model_info', {}).get('has_ml_models', False):
-            st.success("✅ Predictions generated using trained AI models")
-        else:
-            st.info("ℹ️ Predictions generated using physics-based calculations (no trained models yet)")
-        
-        if is_demo:
-            st.info("🎮 This is a demo prediction. Log in with Strava for personalized predictions based on your actual fitness data.")
+        if 'model_info' in predictions:
+            with st.expander("ℹ️ Model Information"):
+                model_info = predictions['model_info']
+                st.json(model_info)
     
-    def _initiate_training(self, user_id: str):
-        """Initiate model training process."""
-        try:
-            # First, collect training data to show count to user
-            with st.spinner("Checking training data..."):
-                training_data = self.model_manager.trainer.collect_training_data(user_id)
-                ride_count = len(training_data.get('features', []))
-            
-            # Display training data information
-            st.info(f"📊 Found **{ride_count} rides** in your training data")
-            
-            if ride_count < 10:
-                st.warning(f"⚠️ Insufficient training data. Need at least 10 rides, but only found {ride_count}.")
-                st.info("Upload more routes or ensure your Strava data is properly synced to enable training.")
-                return
-            
-            # Start synchronous training
-            with st.spinner(f"Training models using {ride_count} rides... This may take a few minutes."):
-                result = self.model_manager.initiate_model_training(user_id, async_training=False)
-            
-            if result.get('status') == 'training_completed':
-                st.success(f"🚀 Model training completed successfully using {ride_count} rides!")
-                st.info("Your personalized AI models are now ready for predictions.")
-            elif result.get('status') == 'insufficient_data':
-                st.warning(f"⚠️ {result.get('message', 'Insufficient data for training')}")
-                st.info("Upload more routes or ensure your Strava data is properly synced to enable training.")
-            else:
-                st.error(f"Training failed: {result.get('error', 'Unknown error')}")
+    def _display_demo_predictions(self, route_data: Dict[str, Any]):
+        """Display demo predictions when models aren't ready."""
+        st.info("🎮 **Demo Predictions** - Your models are training! These predictions will improve as training completes.")
         
-        except Exception as e:
-            logger.error(f"Error initiating training: {e}")
-            st.error("Failed to start training. Please try again.")
+        analysis = route_data.get('analysis', {})
+        distance = analysis.get('distance_km', 25)
+        elevation = analysis.get('total_elevation_gain', 200)
+        
+        # Simple demo calculation based on route characteristics
+        base_speed_z2 = 28.0  # Base endurance speed
+        base_speed_threshold = 35.0  # Base threshold speed
+        
+        # Adjust for elevation (rough estimate)
+        elevation_factor = max(0.7, 1 - (elevation / distance) * 0.01)
+        
+        zone2_speed = base_speed_z2 * elevation_factor
+        threshold_speed = base_speed_threshold * elevation_factor
+        
+        # Route summary
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            st.metric("📏 Distance", f"{distance:.1f} km")
+        
+        with col2:
+            st.metric("⛰️ Elevation", f"{elevation:.0f} m")
+        
+        with col3:
+            st.metric("📈 Avg Grade", f"{analysis.get('avg_gradient_percent', 0):.1f}%")
+        
+        with col4:
+            st.metric("⚡ Est. Power", f"{analysis.get('power_analysis', {}).get('estimated_power_requirement', 200):.0f} W")
+        
+        st.markdown("---")
+        
+        # Demo speed predictions
+        st.markdown("### 🏃 Demo Speed Predictions")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            zone2_time = (distance / zone2_speed * 60)
+            
+            st.markdown("""
+            <div style="background: linear-gradient(135deg, #10B981, #059669); color: white; padding: 1rem; border-radius: 8px; margin: 0.5rem 0; opacity: 0.8;">
+                <h4>🟢 Zone 2 (Endurance)</h4>
+                <p style="font-size: 1.5rem; margin: 0;"><strong>{:.1f} km/h</strong></p>
+                <p style="margin: 0;">Estimated time: {:.0f}:{:02.0f}</p>
+                <small>Demo prediction</small>
+            </div>
+            """.format(zone2_speed, zone2_time // 60, zone2_time % 60), unsafe_allow_html=True)
+        
+        with col2:
+            threshold_time = (distance / threshold_speed * 60)
+            
+            st.markdown("""
+            <div style="background: linear-gradient(135deg, #F59E0B, #D97706); color: white; padding: 1rem; border-radius: 8px; margin: 0.5rem 0; opacity: 0.8;">
+                <h4>🟡 Threshold</h4>
+                <p style="font-size: 1.5rem; margin: 0;"><strong>{:.1f} km/h</strong></p>
+                <p style="margin: 0;">Estimated time: {:.0f}:{:02.0f}</p>
+                <small>Demo prediction</small>
+            </div>
+            """.format(threshold_speed, threshold_time // 60, threshold_time % 60), unsafe_allow_html=True)
+    
+    def _refresh_models(self):
+        """Refresh/retrain models with latest data."""
+        user_id = self._get_user_id()
+        
+        if user_id:
+            with st.spinner("🔄 Refreshing models..."):
+                try:
+                    result = self.model_manager.initiate_model_training(user_id, async_training=False)
+                    
+                    if result.get('status') == 'training_completed':
+                        st.success("✅ Models updated successfully!")
+                    elif result.get('status') == 'insufficient_data':
+                        st.warning("⚠️ Need more training data. Upload more routes or activities.")
+                    else:
+                        st.error(f"❌ Model refresh failed: {result.get('message', 'Unknown error')}")
+                        
+                except Exception as e:
+                    st.error(f"❌ Error refreshing models: {str(e)}")
+        else:
+            st.error("❌ User ID not available for model refresh")
+    
+    def _get_user_id(self) -> Optional[str]:
+        """Get user ID from athlete info."""
+        athlete_info = self.auth_manager.get_athlete_info()
+        if athlete_info:
+            return str(athlete_info.get('id', ''))
+        return None
