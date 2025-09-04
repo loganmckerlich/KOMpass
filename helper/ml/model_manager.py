@@ -97,6 +97,55 @@ class ModelManager:
         log_function_exit(logger, "predict_route_speed")
         return predictions
     
+    def predict_speeds(self, user_id: str, route_data: Dict[str, Any], rider_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Predict speeds for a route using rider and route data.
+        This method provides the interface expected by the UI components.
+        
+        Args:
+            user_id: User identifier for training automation
+            route_data: Route analysis data
+            rider_data: Rider fitness and characteristics data
+            
+        Returns:
+            Dictionary containing speed predictions with status information
+        """
+        log_function_entry(logger, "predict_speeds")
+        
+        try:
+            # Ensure user_id is in rider_data for downstream processing
+            rider_data_with_id = rider_data.copy()
+            rider_data_with_id['user_id'] = user_id
+            
+            # Call the existing prediction method
+            predictions = self.predict_route_speed(rider_data_with_id, route_data)
+            
+            # Check if predictions were successful
+            if 'error' not in predictions:
+                # Add success status for UI compatibility
+                predictions['status'] = 'success'
+                predictions['predictions'] = {
+                    'zone2_speed': predictions.get('zone2', {}).get('speed_kmh', 0),
+                    'threshold_speed': predictions.get('threshold', {}).get('speed_kmh', 0)
+                }
+            else:
+                predictions['status'] = 'failed'
+            
+            log_function_exit(logger, "predict_speeds")
+            return predictions
+            
+        except Exception as e:
+            logger.error(f"Error in predict_speeds: {e}")
+            log_function_exit(logger, "predict_speeds")
+            return {
+                'status': 'failed',
+                'error': str(e),
+                '_metadata': {
+                    'prediction_timestamp': datetime.now().isoformat(),
+                    'status': 'failed'
+                }
+            }
+    
     def initiate_model_training(self, user_id: str, async_training: bool = True) -> Dict[str, Any]:
         """
         Initiate model training for a user.
