@@ -84,7 +84,7 @@ class RiderDataFetcher:
         log_function_exit(logger, "fetch_comprehensive_rider_data")
         return rider_data
     
-    def _fetch_recent_activities_comprehensive(self, access_token: str, days_back: int = 90) -> List[Dict]:
+    def _fetch_recent_activities_comprehensive(self, access_token: str, days_back: int = 360) -> List[Dict]:
         """
         Fetch recent activities with comprehensive data for analysis.
         
