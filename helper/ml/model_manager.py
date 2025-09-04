@@ -505,3 +505,52 @@ class ModelManager:
     def is_training_in_progress(self) -> bool:
         """Check if training is currently in progress."""
         return self._training_in_progress
+    
+    def are_models_trained_and_ready(self) -> Dict[str, Any]:
+        """
+        Check if models are trained and ready for predictions.
+        
+        Returns:
+            Dictionary with status information about model readiness
+        """
+        try:
+            training_status = self.trainer.get_training_status()
+            
+            # Check if we have any trained models
+            models = training_status.get('models', {})
+            last_training = training_status.get('last_training')
+            
+            if not models or not last_training:
+                return {
+                    'ready': False,
+                    'status': 'no_models',
+                    'message': 'No models have been trained yet. Please train models first.',
+                    'models': {}
+                }
+            
+            # Check if training is currently in progress
+            if self._training_in_progress:
+                return {
+                    'ready': False,
+                    'status': 'training_in_progress', 
+                    'message': 'Model training is currently in progress. Please wait for training to complete.',
+                    'models': models
+                }
+            
+            # Models exist and training is not in progress - they're ready
+            return {
+                'ready': True,
+                'status': 'ready',
+                'message': 'Models are trained and ready for predictions.',
+                'models': models,
+                'last_training': last_training
+            }
+            
+        except Exception as e:
+            logger.error(f"Error checking model readiness: {e}")
+            return {
+                'ready': False,
+                'status': 'error',
+                'message': f'Error checking model status: {str(e)}',
+                'models': {}
+            }
