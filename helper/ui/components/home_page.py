@@ -51,7 +51,7 @@ class HomePage:
             # Quick start guide
             st.markdown("### 🚀 Quick Start")
             st.markdown("""
-            1. **Upload Route**: Go to 'Route Upload' and select your GPX file
+            1. **Upload Route**: Go to 'Speed Predictions' and select your GPX file
             2. **View Analysis**: Get comprehensive route insights and metrics
             3. **Connect Strava**: Link your account for enhanced features
             """)
@@ -69,7 +69,7 @@ class HomePage:
                 else:
                     st.success("✅ Connected to Strava")
                 
-                st.info("💡 Visit the **Route Upload** page to import activities from Strava.")
+                st.info("💡 Visit the **Speed Predictions** page to import activities from Strava.")
             else:
                 # Show sign-in option
                 st.info("Connect your Strava account for enhanced features:")

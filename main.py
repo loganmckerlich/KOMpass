@@ -97,13 +97,10 @@ def main():
         elif selected_page == "User Stats":
             ui_components.render_user_stats_page()
         
-        elif selected_page == "Route Upload":
-            ui_components.render_route_upload_page()
-        
         else:
             logger.warning(f"Unknown page selected: {selected_page}")
             st.error(f"Unknown page: {selected_page}")
-            st.info("Available pages: Speed Predictions, User Stats, Route Upload")
+            st.info("Available pages: Speed Predictions, User Stats")
         
         logger.debug("Main application rendering completed")
         
