@@ -141,15 +141,13 @@ def main():
     
     page_choice = st.selectbox(
         "Choose a page to test:",
-        ["Speed Predictions", "User Stats", "Route Upload"]
+        ["Speed Predictions", "User Stats"]
     )
     
     if page_choice == "Speed Predictions":
         test_speed_predictions()
     elif page_choice == "User Stats":
         test_user_stats()
-    elif page_choice == "Route Upload":
-        test_route_upload()
 
 def test_speed_predictions():
     """Test the speed predictions page."""
@@ -175,19 +173,6 @@ def test_user_stats():
         
     except Exception as e:
         st.error(f"❌ Error testing User Stats: {str(e)}")
-        st.exception(e)
-
-def test_route_upload():
-    """Test the route upload page."""
-    try:
-        from helper.ui.components.route_upload import RouteUpload
-        
-        st.markdown("### 📁 Testing Route Upload Page")
-        route_upload = RouteUpload()
-        route_upload.render_route_upload_page()
-        
-    except Exception as e:
-        st.error(f"❌ Error testing Route Upload: {str(e)}")
         st.exception(e)
 
 if __name__ == "__main__":

@@ -288,13 +288,13 @@ class HeaderAndLayout:
             
             selected_page = st.radio(
                 "Choose a page:",
-                ["🎯 Speed Predictions", "📊 User Stats", "📁 Route Upload"],
+                ["🎯 Speed Predictions", "📊 User Stats"],
                 index=st.session_state['selected_page_index'],
                 key="page_selector"
             )
             
             # Update session state when radio selection changes
-            page_options = ["🎯 Speed Predictions", "📊 User Stats", "📁 Route Upload"]
+            page_options = ["🎯 Speed Predictions", "📊 User Stats"]
             if selected_page in page_options:
                 st.session_state['selected_page_index'] = page_options.index(selected_page)
             
@@ -349,7 +349,7 @@ class HeaderAndLayout:
         - **Strava Integration**: Connect your Strava account for enhanced analysis
         
         ### 🚀 Getting Started
-        1. **Upload a Route**: Use the 'Route Upload' page to upload your GPX file
+        1. **Upload a Route**: Use the 'Speed Predictions' page to upload your GPX file
         2. **Connect Strava**: Link your Strava account for additional features
         3. **Analyze**: Get comprehensive insights about your cycling routes
         

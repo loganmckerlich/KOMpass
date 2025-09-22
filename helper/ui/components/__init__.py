@@ -58,10 +58,6 @@ class UIComponents:
         """Render authentication gate for unauthenticated users."""
         return self.auth_gate.render_authentication_gate()
     
-    def render_route_upload_page(self):
-        """Render route upload page."""
-        return self.route_upload.render_route_upload_page()
-    
     def render_ml_page(self):
         """Render ML page."""
         return self.ml_page.render_ml_page()
